@@ -6,21 +6,51 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
+import session from 'express-session'
 import { Server as SocketServer } from 'socket.io'
 import canvasRoutes from './routes/canvas.js'
+import ltiRoutes from './routes/lti.js'
+import ltiSession from './middleware/ltiSession.js'
+import LTI_CONFIG, { ltiConfigErrors } from './config/ltiConfig.js'
 import { startPolling } from './services/pollingService.js'
 import { setIo } from './services/realtime.js'
 
 const app = express()
 
+// Canvas launches the tool inside an iframe, so the session cookie has to be
+// SameSite=None — which browsers only accept alongside Secure. Behind Railway's
+// proxy that also needs trust proxy so express-session sees the https scheme.
+if (LTI_CONFIG.enabled) app.set('trust proxy', 1)
+
 app.use(cors())
 app.use(express.json())
+
+// saveUninitialized:false means no cookie is ever issued until a launch writes
+// to the session, so with LTI off this middleware is a no-op on the wire.
+app.use(
+  session({
+    secret: LTI_CONFIG.sessionSecret ?? 'rep-dashboard-dev-secret',
+    name: 'rep.sid',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      maxAge: 12 * 60 * 60 * 1000,
+      sameSite: LTI_CONFIG.enabled ? 'none' : 'lax',
+      secure: LTI_CONFIG.enabled && process.env.NODE_ENV === 'production',
+    },
+  })
+)
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
 })
 
-app.use('/api', canvasRoutes)
+app.use('/lti', ltiRoutes)
+
+// Resolves req.canvasUserId for every data route: the launch session when LTI
+// is on, the unchanged fallback id when it is off.
+app.use('/api', ltiSession, canvasRoutes)
 
 // Unknown /api path -> clean JSON instead of Express' HTML 404.
 app.use('/api', (req, res) => {
@@ -71,11 +101,25 @@ io.on('connection', (socket) => {
   })
 })
 
-// Wired to a fixed user until Canvas LTI identity lands in a later milestone.
-const POLL_USER_ID = 2619
+// The background poll is a single server-wide loop with no request behind it,
+// so it can't read a per-user LTI session. It stays pinned to the fallback user
+// and drives the shared 'coursesUpdate'/'filesUpdate' broadcasts as before.
+const POLL_USER_ID = LTI_CONFIG.fallbackUserId
 
 httpServer.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`)
+
+  if (LTI_CONFIG.enabled) {
+    const missing = ltiConfigErrors()
+    console.log(
+      missing.length
+        ? `[lti] ENABLED but misconfigured — missing ${missing.join(', ')}; launches will fail`
+        : '[lti] enabled — POST /lti/launch is accepting Canvas launches'
+    )
+  } else {
+    console.log(`[lti] disabled — serving fallback user ${LTI_CONFIG.fallbackUserId}`)
+  }
+
   startPolling(io, { userId: POLL_USER_ID })
 })
 

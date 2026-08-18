@@ -83,13 +83,11 @@ export default function Sidebar({ open, onClose }) {
 
         {/* Full horizontal lockup: wordmark and partner logos live in the image. */}
         <div className="px-4 pb-5 pt-5">
-          <div className="rounded-lg bg-white p-3">
-            <img
-              src={repLogoFull}
-              alt="replenish — Resilient Educators Partnership"
-              className="h-auto w-full object-contain"
-            />
-          </div>
+          <img
+            src={repLogoFull}
+            alt="replenish — Resilient Educators Partnership"
+            className="h-auto w-full object-contain"
+          />
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3">

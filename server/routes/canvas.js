@@ -14,9 +14,6 @@ import { setLastKnown } from '../services/pollingService.js'
 
 const router = Router()
 
-// Wired to a fixed user until Canvas LTI identity lands in a later milestone.
-const CURRENT_USER_ID = 2619
-
 /**
  * Re-reads discussions straight after a write and broadcasts them, so the
  * poster sees the change immediately rather than waiting up to 30s, and every
@@ -24,8 +21,8 @@ const CURRENT_USER_ID = 2619
  *
  * Seeding the poller's baseline stops the next cycle re-reporting it as a change.
  */
-async function refreshDiscussions() {
-  const discussions = await getDiscussions(CURRENT_USER_ID)
+async function refreshDiscussions(userId) {
+  const discussions = await getDiscussions(userId)
   setLastKnown({ discussions })
   emit('discussionsUpdate', discussions)
   return discussions
@@ -40,7 +37,7 @@ const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, ne
 router.get(
   '/user/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getUserProfile(req.params.userId))
+    res.json(await getUserProfile(req.canvasUserId))
   })
 )
 
@@ -50,7 +47,7 @@ router.get(
 router.get(
   '/courses/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getCourses(req.params.userId))
+    res.json(await getCourses(req.canvasUserId))
   })
 )
 
@@ -60,7 +57,7 @@ router.get(
 router.get(
   '/files/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getFiles(req.params.userId))
+    res.json(await getFiles(req.canvasUserId))
   })
 )
 
@@ -70,7 +67,7 @@ router.get(
 router.get(
   '/discussions/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getDiscussions(req.params.userId))
+    res.json(await getDiscussions(req.canvasUserId))
   })
 )
 
@@ -86,12 +83,12 @@ router.post(
       return res.status(400).json({ error: true, message: 'Title and message are both required' })
     }
 
-    const topic = await createDiscussion(CURRENT_USER_ID, req.params.courseId, {
+    const topic = await createDiscussion(req.canvasUserId, req.params.courseId, {
       title: title.trim(),
       message: message.trim(),
     })
 
-    await refreshDiscussions()
+    await refreshDiscussions(req.canvasUserId)
     res.status(201).json(topic)
   })
 )
@@ -109,13 +106,13 @@ router.post(
     }
 
     const entry = await createDiscussionEntry(
-      CURRENT_USER_ID,
+      req.canvasUserId,
       req.params.courseId,
       req.params.topicId,
       { message: message.trim() }
     )
 
-    await refreshDiscussions()
+    await refreshDiscussions(req.canvasUserId)
     res.status(201).json(entry)
   })
 )
@@ -126,7 +123,7 @@ router.post(
 router.get(
   '/groups/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getGroups(req.params.userId))
+    res.json(await getGroups(req.canvasUserId))
   })
 )
 

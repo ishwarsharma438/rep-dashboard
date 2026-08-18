@@ -4,19 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Canvas LMS integrated dashboard",
- "scripts": {
-  "dev": "concurrently \"npm run server\" \"npm run client\"",
-  "server": "node server/index.js",
-  "client": "vite",
-  "build": "vite build",
-  "preview": "vite preview",
-  "start": "node server/index.js"
-},
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node server/index.js",
+    "client": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js"
+  },
   "dependencies": {
     "axios": "^1.7.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-session": "^1.19.0",
+    "ims-lti": "^3.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.2",
