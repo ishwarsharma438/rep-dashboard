@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import repLogo from '../assets/rep-logo.png'
+import repLogoFull from '../assets/rep-logo-full.png'
 import Avatar from './Avatar.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import {
@@ -81,18 +81,14 @@ export default function Sidebar({ open, onClose }) {
           <CloseIcon className="h-5 w-5" />
         </button>
 
-        {/* Horizontal lockup: logo left, wordmark right */}
-        <div className="flex items-center gap-3 px-5 pb-6 pt-6">
-          {/* Portrait logo (2505x3531) — height drives the size, width follows. */}
-          <img src={repLogo} alt="" className="h-11 w-auto shrink-0 object-contain" />
-          <div className="min-w-0">
-            <div className="font-heading text-2xl font-bold lowercase leading-none">
-              <span className="text-rep-orange">rep</span>
-              <span className="text-white">lenish</span>
-            </div>
-            <div className="mt-1.5 font-body text-[10px] font-semibold uppercase leading-tight tracking-[0.12em] text-rep-orange/60">
-              Resilient Educators Partnership
-            </div>
+        {/* Full horizontal lockup: wordmark and partner logos live in the image. */}
+        <div className="px-4 pb-5 pt-5">
+          <div className="rounded-lg bg-white p-3">
+            <img
+              src={repLogoFull}
+              alt="replenish — Resilient Educators Partnership"
+              className="h-auto w-full object-contain"
+            />
           </div>
         </div>
 
