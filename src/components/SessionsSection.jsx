@@ -1,0 +1,71 @@
+// BOOKING FUNCTIONALITY — MILESTONE 2 SCOPE. Visual only, not wired to Calendly/Zoom yet.
+import { CalendarPlusIcon, PeopleIcon, PersonIcon } from './icons.jsx'
+
+// Placeholder counts — no booking data source exists until Milestone 2.
+const SESSIONS = [
+  {
+    key: 'mhfa',
+    title: 'Mental Health First Aid Sessions',
+    count: '0 of 2 booked',
+    cta: 'Book your sessions',
+    Icon: CalendarPlusIcon,
+  },
+  {
+    key: 'coaching',
+    title: 'One-on-One Coaching Sessions',
+    count: '0 of 2 booked',
+    cta: 'Book your sessions',
+    Icon: PersonIcon,
+  },
+  {
+    key: 'workshops',
+    title: 'Group Workshops',
+    count: '0 of 2 included',
+    cta: 'See schedule',
+    Icon: PeopleIcon,
+  },
+]
+
+function SessionCard({ session }) {
+  const { title, count, cta, Icon } = session
+
+  return (
+    <div className="flex flex-col rounded-2xl bg-white p-5 shadow-md">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-rep-orange/15 text-rep-orange">
+        <Icon className="h-5 w-5" />
+      </div>
+
+      <h3 className="mt-3 font-heading text-sm font-bold leading-snug text-rep-navy">{title}</h3>
+      <p className="mt-1 font-body text-xs text-gray-500">{count}</p>
+
+      <div className="group relative mt-4">
+        <button
+          type="button"
+          disabled
+          title="Coming soon"
+          className="w-full cursor-not-allowed rounded-lg bg-rep-orange px-4 py-2 font-body text-sm font-semibold text-white opacity-40"
+        >
+          {cta}
+        </button>
+        <span className="pointer-events-none absolute -top-2 right-2 rounded-full bg-rep-navy px-2 py-0.5 font-body text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+          Coming soon
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function SessionsSection() {
+  return (
+    <section>
+      <h2 className="mb-3 font-heading text-lg font-semibold text-rep-navy">
+        Your Included Sessions
+      </h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {SESSIONS.map((s) => (
+          <SessionCard key={s.key} session={s} />
+        ))}
+      </div>
+    </section>
+  )
+}
