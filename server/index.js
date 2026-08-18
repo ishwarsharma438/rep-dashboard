@@ -2,6 +2,8 @@
 import 'dotenv/config'
 
 import { createServer } from 'node:http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
 import { Server as SocketServer } from 'socket.io'
@@ -23,6 +25,18 @@ app.use('/api', canvasRoutes)
 // Unknown /api path -> clean JSON instead of Express' HTML 404.
 app.use('/api', (req, res) => {
   res.status(404).json({ error: true, message: `No route for ${req.method} ${req.originalUrl}` })
+})
+
+// Serve the built React app (vite build -> dist/) and fall back to
+// index.html for client-side routes, without swallowing /api requests.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const distDir = path.join(__dirname, '..', 'dist')
+
+app.use(express.static(distDir))
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next()
+  res.sendFile(path.join(distDir, 'index.html'))
 })
 
 // Catch-all error handler: keeps the server alive and always answers with JSON.
