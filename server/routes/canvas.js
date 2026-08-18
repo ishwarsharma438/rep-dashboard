@@ -9,22 +9,23 @@ import {
   getGroups,
   getUserProfile,
 } from '../services/canvasData.js'
-import { emit } from '../services/realtime.js'
+import { emitToUser } from '../services/realtime.js'
 import { setLastKnown } from '../services/pollingService.js'
 
 const router = Router()
 
 /**
- * Re-reads discussions straight after a write and broadcasts them, so the
- * poster sees the change immediately rather than waiting up to 30s, and every
- * other open dashboard updates over the existing 'discussionsUpdate' event.
+ * Re-reads discussions straight after a write and pushes them into the poster's
+ * own room, so every tab they have open updates immediately rather than waiting
+ * up to 30s. Scoped to that user: discussion visibility follows enrolment, so
+ * broadcasting to everyone could surface a course another teacher can't see.
  *
  * Seeding the poller's baseline stops the next cycle re-reporting it as a change.
  */
 async function refreshDiscussions(userId) {
   const discussions = await getDiscussions(userId)
-  setLastKnown({ discussions })
-  emit('discussionsUpdate', discussions)
+  setLastKnown(userId, { discussions })
+  emitToUser(userId, 'discussionsUpdate', discussions)
   return discussions
 }
 

@@ -12,7 +12,12 @@ import canvasRoutes from './routes/canvas.js'
 import ltiRoutes from './routes/lti.js'
 import ltiSession from './middleware/ltiSession.js'
 import LTI_CONFIG, { ltiConfigErrors } from './config/ltiConfig.js'
-import { startPolling } from './services/pollingService.js'
+import {
+  startAnnouncementPolling,
+  subscribeUser,
+  unsubscribeUser,
+  userRoom,
+} from './services/pollingService.js'
 import { setIo } from './services/realtime.js'
 
 const app = express()
@@ -33,21 +38,21 @@ app.use(express.json())
 // cross-site one. Browsers drop a cross-site cookie unless it is explicitly
 // SameSite=None, and they only honour SameSite=None when it is also Secure —
 // so the two must be set together or the session silently fails to stick.
-app.use(
-  session({
-    secret: LTI_CONFIG.sessionSecret ?? 'rep-dashboard-dev-secret',
-    name: 'rep.sid',
-    resave: false,
-    saveUninitialized: false,
-    proxy: true,
-    cookie: {
-      secure: true,
-      sameSite: 'none',
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000,
-    },
-  })
-)
+const sessionMiddleware = session({
+  secret: LTI_CONFIG.sessionSecret ?? 'rep-dashboard-dev-secret',
+  name: 'rep.sid',
+  resave: false,
+  saveUninitialized: false,
+  proxy: true,
+  cookie: {
+    secure: true,
+    sameSite: 'none',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+  },
+})
+
+app.use(sessionMiddleware)
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
@@ -101,17 +106,51 @@ const io = new SocketServer(httpServer, {
 // Let routes broadcast without importing this module back.
 setIo(io)
 
+// Gives the socket handshake the same session the HTTP routes see, so a
+// connection can be tied to its verified LTI launch.
+io.engine.use(sessionMiddleware)
+
+/**
+ * The Canvas user a socket is allowed to receive updates for.
+ *
+ * Deliberately ignores anything the client sends in the handshake: a
+ * client-supplied id would let any connection subscribe to any user's room and
+ * read their course progress. With LTI on the id comes from the signed launch
+ * session; with LTI off there is exactly one user and it is the fallback id.
+ */
+function resolveSocketUser(socket) {
+  if (!LTI_CONFIG.enabled) return LTI_CONFIG.fallbackUserId
+
+  const session = socket.request?.session?.lti
+  return session?.canvasUserId ?? null
+}
+
 io.on('connection', (socket) => {
-  console.log(`[socket] client connected: ${socket.id}`)
+  const userId = resolveSocketUser(socket)
+
+  if (!userId) {
+    // LTI is on but this socket has no launch behind it — nothing to send.
+    console.warn(`[socket] rejecting ${socket.id}: no LTI session`)
+    socket.emit('unauthorized', { message: 'No active LTI session' })
+    socket.disconnect(true)
+    return
+  }
+
+  // Join before subscribing: subscribeUser kicks off a baseline poll straight
+  // away, and a socket that isn't in the room yet would miss its own updates.
+  const room = userRoom(String(userId))
+  socket.join(room)
+  subscribeUser(io, userId, socket.id)
+
+  // Lets the client confirm which identity the server actually bound it to.
+  socket.emit('session', { userId: String(userId) })
+  console.log(`[socket] client connected: ${socket.id} -> ${room}`)
+
   socket.on('disconnect', (reason) => {
+    unsubscribeUser(userId, socket.id)
     console.log(`[socket] client disconnected: ${socket.id} (${reason})`)
   })
 })
-
-// The background poll is a single server-wide loop with no request behind it,
-// so it can't read a per-user LTI session. It stays pinned to the fallback user
-// and drives the shared 'coursesUpdate'/'filesUpdate' broadcasts as before.
-const POLL_USER_ID = LTI_CONFIG.fallbackUserId
 
 httpServer.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`)
@@ -127,7 +166,9 @@ httpServer.listen(PORT, () => {
     console.log(`[lti] disabled — serving fallback user ${LTI_CONFIG.fallbackUserId}`)
   }
 
-  startPolling(io, { userId: POLL_USER_ID })
+  // Account-wide announcements only. Per-user course/file/discussion polling
+  // starts and stops with each socket connection.
+  startAnnouncementPolling(io)
 })
 
 export { io }
