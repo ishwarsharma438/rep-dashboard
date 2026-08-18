@@ -17,27 +17,34 @@ import { setIo } from './services/realtime.js'
 
 const app = express()
 
-// Canvas launches the tool inside an iframe, so the session cookie has to be
-// SameSite=None — which browsers only accept alongside Secure. Behind Railway's
-// proxy that also needs trust proxy so express-session sees the https scheme.
-if (LTI_CONFIG.enabled) app.set('trust proxy', 1)
+// TLS terminates at the Traefik reverse proxy, so the app itself only ever sees
+// plain http. Trusting the first proxy hop lets express-session read
+// X-Forwarded-Proto and recognise the request as https — without this, a
+// Secure cookie is silently dropped and the launch session never persists.
+app.set('trust proxy', 1)
 
 app.use(cors())
 app.use(express.json())
 
 // saveUninitialized:false means no cookie is ever issued until a launch writes
 // to the session, so with LTI off this middleware is a no-op on the wire.
+//
+// Canvas renders the tool in an iframe, which makes every request to us a
+// cross-site one. Browsers drop a cross-site cookie unless it is explicitly
+// SameSite=None, and they only honour SameSite=None when it is also Secure —
+// so the two must be set together or the session silently fails to stick.
 app.use(
   session({
     secret: LTI_CONFIG.sessionSecret ?? 'rep-dashboard-dev-secret',
     name: 'rep.sid',
     resave: false,
     saveUninitialized: false,
+    proxy: true,
     cookie: {
+      secure: true,
+      sameSite: 'none',
       httpOnly: true,
-      maxAge: 12 * 60 * 60 * 1000,
-      sameSite: LTI_CONFIG.enabled ? 'none' : 'lax',
-      secure: LTI_CONFIG.enabled && process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000,
     },
   })
 )
