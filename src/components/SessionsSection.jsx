@@ -1,12 +1,14 @@
 // BOOKING FUNCTIONALITY — MILESTONE 2 SCOPE. Visual only, not wired to Calendly/Zoom yet.
-import { CalendarPlusIcon, PeopleIcon, PersonIcon } from './icons.jsx'
+import { CalendarPlusIcon, MapPinIcon, PeopleIcon, PersonIcon, VideoIcon } from './icons.jsx'
 
 // Placeholder counts — no booking data source exists until Milestone 2.
+// Totals track the program roadmap, not Canvas: nothing here is fetched.
 const SESSIONS = [
   {
     key: 'mhfa',
+    // One booking covers the 2-day certification.
     title: 'Mental Health First Aid Sessions',
-    count: '0 of 2 booked',
+    count: '0 of 1 booked',
     cta: 'Book your sessions',
     Icon: CalendarPlusIcon,
   },
@@ -19,10 +21,24 @@ const SESSIONS = [
   },
   {
     key: 'workshops',
-    title: 'Group Workshops',
-    count: '0 of 2 included',
+    title: 'Group Coaching Sessions',
+    count: '0 of 3 included',
     cta: 'See schedule',
     Icon: PeopleIcon,
+  },
+  {
+    key: 'webinars',
+    title: 'Webinars',
+    count: '0 of 4 attended',
+    cta: 'View schedule',
+    Icon: VideoIcon,
+  },
+  {
+    key: 'f2f',
+    title: 'Face-to-Face Workshops',
+    count: '0 of 2 attended',
+    cta: 'View schedule',
+    Icon: MapPinIcon,
   },
 ]
 
@@ -61,7 +77,8 @@ export default function SessionsSection() {
       <h2 className="mb-3 font-heading text-lg font-semibold text-rep-navy">
         Your Included Sessions
       </h2>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Five cards: 1 col on mobile, 2 on tablet, 3 on desktop (3 + 2 rows). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SESSIONS.map((s) => (
           <SessionCard key={s.key} session={s} />
         ))}
