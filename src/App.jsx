@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard.jsx'
 import CoursesPage from './pages/CoursesPage.jsx'
 import AnnouncementsPage from './pages/AnnouncementsPage.jsx'
 import ResourcesPage from './pages/ResourcesPage.jsx'
-import SessionsComingSoon from './pages/SessionsComingSoon.jsx'
+import SessionsPage from './pages/SessionsPage.jsx'
 import CalendarPage from './pages/CalendarPage.jsx'
 import { ProfileProvider } from './context/ProfileContext.jsx'
 import { DashboardDataProvider } from './context/DashboardDataContext.jsx'
@@ -44,9 +44,7 @@ function Shell() {
             <Route path="/resources" element={<ResourcesPage />} />
 
             <Route path="/calendar" element={<CalendarPage />} />
-
-            {/* Depends on the Calendly/Zoom work in a later milestone. */}
-            <Route path="/sessions" element={<SessionsComingSoon />} />
+            <Route path="/sessions" element={<SessionsPage />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

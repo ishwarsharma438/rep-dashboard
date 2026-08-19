@@ -1,23 +1,23 @@
 import { Link } from 'react-router-dom'
-import { useProfile } from '../context/ProfileContext.jsx'
-import { VideoIcon } from './icons.jsx'
-
-/**
- * Real coaching-session data source.
- *
- * This was specified to come from the `coachingGroupSchedule` object in
- * JourneyTimeline.jsx, but no such component or dataset exists in this project
- * yet — so there is nothing to read from. The shape below is the contract this
- * card consumes; drop the real per-group schedule in and the list renders.
- *
- *   { 'Banksia': [{ startsAt: ISO string, title, durationMins, mode }] }
- *
- * Until then every user falls through to the empty state, which is also the
- * correct result for anyone without a group assigned.
- */
-const COACHING_GROUP_SCHEDULE = {}
+import { COACHING_GROUPS, EVENT_TYPE_META, ROADMAP_EVENTS } from '../data/roadmapEvents.js'
+import useCoachingGroup from '../hooks/useCoachingGroup.js'
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Events shown at once in the widget. */
+const PREVIEW_COUNT = 3
+
+/** Types that apply to every teacher regardless of group membership. */
+const UNIVERSAL_TYPES = new Set(['webinar', 'f2f'])
+
+const pad = (n) => String(n).padStart(2, '0')
+const toISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+function fromISO(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
 
 /** The seven dates of the Mon–Sun week containing `today`. */
 export function weekStrip(today = new Date()) {
@@ -39,31 +39,56 @@ export function weekStrip(today = new Date()) {
   })
 }
 
-function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+/** '7:30am' */
+function clock(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number)
+  return `${h % 12 === 0 ? 12 : h % 12}:${pad(m)}${h >= 12 ? 'pm' : 'am'}`
 }
 
-function formatDayHeading(iso) {
-  return new Date(iso).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' })
+function eventTime(event) {
+  if (!event.startTime) return 'All day'
+  return event.endTime
+    ? `${clock(event.startTime)} – ${clock(event.endTime)}`
+    : clock(event.startTime)
 }
 
-/** Sessions in the current week, grouped by day, earliest first. */
-function groupByDay(sessions) {
-  const byDay = new Map()
-  for (const s of [...sessions].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))) {
-    const key = new Date(s.startsAt).toDateString()
-    if (!byDay.has(key)) byDay.set(key, [])
-    byDay.get(key).push(s)
-  }
-  return [...byDay.entries()]
+function eventDay(iso) {
+  const d = fromISO(iso)
+  return `${DAY_LABELS[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`
+}
+
+/**
+ * The next few events this teacher should care about.
+ *
+ * Without a group, only the whole-program events (webinars and F2F) are
+ * certain to apply — showing all 48 coaching sessions would be noise, since
+ * a teacher attends the three belonging to one group. Once they join, their
+ * own sessions are merged in alongside MHFA.
+ */
+export function upcomingFor(groupCode, today = new Date(), limit = PREVIEW_COUNT) {
+  const todayIso = toISO(today)
+  const group = groupCode ? COACHING_GROUPS.find((g) => g.code === groupCode) : null
+  const groupLabel = group ? `${group.code} - ${group.name}` : null
+
+  return ROADMAP_EVENTS.filter((e) => {
+    if ((e.endDate ?? e.startDate) < todayIso) return false
+    if (UNIVERSAL_TYPES.has(e.type)) return true
+    if (!groupLabel) return false
+    if (e.type === 'mhfa') return true
+    return e.type === 'group_coaching' && e.group === groupLabel
+  })
+    .sort(
+      (a, b) =>
+        a.startDate.localeCompare(b.startDate) ||
+        (a.startTime ?? '').localeCompare(b.startTime ?? '')
+    )
+    .slice(0, limit)
 }
 
 export default function ComingUp() {
-  const { group } = useProfile()
+  const { groupCode } = useCoachingGroup()
   const days = weekStrip()
-
-  const sessions = group?.hasGroup ? (COACHING_GROUP_SCHEDULE[group.groupName] ?? []) : []
-  const grouped = groupByDay(sessions)
+  const upcoming = upcomingFor(groupCode)
 
   return (
     <div className="rounded-2xl bg-white p-5 shadow-md">
@@ -96,44 +121,43 @@ export default function ComingUp() {
       </div>
 
       <div className="mt-5 border-t border-gray-100 pt-4">
-        {grouped.length === 0 ? (
+        {upcoming.length === 0 ? (
           <p className="py-4 text-center font-body text-sm text-gray-500">
             No sessions scheduled yet
           </p>
         ) : (
-          <div className="space-y-4">
-            {grouped.map(([day, items]) => (
-              <div key={day}>
-                <h3 className="font-heading text-xs font-bold uppercase tracking-wide text-rep-orange">
-                  {formatDayHeading(day)}
-                </h3>
-                <ul className="mt-2 space-y-2">
-                  {items.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <VideoIcon className="mt-0.5 h-4 w-4 shrink-0 text-rep-navy/50" />
-                      <div className="min-w-0">
-                        <p className="font-body text-sm font-semibold text-rep-navy">{s.title}</p>
-                        <p className="font-body text-xs text-gray-500">
-                          {formatTime(s.startsAt)}
-                          {s.durationMins ? ` · ${s.durationMins} min` : ''}
-                          {s.mode ? ` · ${s.mode}` : ''}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          <ul className="space-y-3">
+            {upcoming.map((event) => (
+              <li key={event.id} className="flex items-start gap-2.5">
+                <span
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${EVENT_TYPE_META[event.type].dot}`}
+                />
+                <div className="min-w-0">
+                  <p className="truncate font-body text-sm font-semibold text-rep-navy">
+                    {event.title}
+                  </p>
+                  <p className="font-body text-xs text-gray-500">
+                    {eventDay(event.startDate)} · {eventTime(event)}
+                  </p>
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
-      <button
-        type="button"
-        className="mt-4 font-body text-xs font-semibold text-rep-orange hover:underline"
+      {!groupCode && (
+        <p className="mt-3 font-body text-xs text-gray-500">
+          Join a coaching group to see your own sessions here.
+        </p>
+      )}
+
+      <Link
+        to="/sessions"
+        className="mt-4 inline-block font-body text-xs font-semibold text-rep-orange hover:underline"
       >
         See all sessions →
-      </button>
+      </Link>
     </div>
   )
 }

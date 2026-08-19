@@ -9,6 +9,7 @@ import {
   getGroups,
   getUserProfile,
 } from '../services/canvasData.js'
+import { cachedGet } from '../services/canvasApi.js'
 import { emitToUser } from '../services/realtime.js'
 import { setLastKnown } from '../services/pollingService.js'
 
@@ -125,6 +126,46 @@ router.get(
   '/groups/:userId',
   asyncHandler(async (req, res) => {
     res.json(await getGroups(req.canvasUserId))
+  })
+)
+
+/**
+ * GET /api/calendar — Canvas calendar events for the current user.
+ *
+ * Read-only, like every other Canvas call here. Exists ahead of its consumer:
+ * once n8n writes Calendly bookings into the Canvas Calendar, this is where the
+ * dashboard reads them back. Until then it returns whatever the user already
+ * has in Canvas, which is usually an empty list.
+ *
+ * Defaults to a 12-month window; Canvas otherwise applies its own narrow one.
+ */
+router.get(
+  '/calendar',
+  asyncHandler(async (req, res) => {
+    const day = (ms) => new Date(ms).toISOString().slice(0, 10)
+    const startDate = req.query.start_date ?? day(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const endDate = req.query.end_date ?? day(Date.now() + 365 * 24 * 60 * 60 * 1000)
+
+    const { data } = await cachedGet(
+      `/users/${encodeURIComponent(req.canvasUserId)}/calendar_events`,
+      { params: { type: 'event', start_date: startDate, end_date: endDate, per_page: 50 } }
+    )
+
+    const events = Array.isArray(data) ? data : []
+
+    res.json(
+      events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description ?? null,
+        startAt: e.start_at ?? null,
+        endAt: e.end_at ?? null,
+        allDay: e.all_day ?? false,
+        location: e.location_name ?? null,
+        url: e.html_url ?? null,
+        contextCode: e.context_code ?? null,
+      }))
+    )
   })
 )
 

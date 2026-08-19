@@ -177,13 +177,21 @@ const MHFA_WORKSHOPS = MHFA_SCHEDULE.map(({ n, startDate, endDate, location, ter
  * Coaching groups. Each group meets three times across the program, always on
  * the same weekday at the same time — so the schedule is expressed once per
  * group and expanded below rather than written out 48 times.
+ *
+ * Exported: the sessions page renders these directly, and deriving both the
+ * calendar events and the group cards from one list stops the two drifting.
+ *
+ * `meaning` is the tree's significance. The roadmap only supplies it for the
+ * four Cohort 1 groups, so E–P carry none rather than invented copy.
  */
-const COACHING_GROUPS = [
+export const GROUP_CAPACITY = 12
+
+export const COACHING_GROUPS = [
   // --- Cohort 1: groups A–D ---
-  { code: 'A', name: 'Acacia', cohort: 'cohort1', startTime: '07:30', endTime: '08:30', dates: ['2026-10-27', '2027-02-16', '2027-04-27'] },
-  { code: 'B', name: 'Banksia', cohort: 'cohort1', startTime: '16:30', endTime: '17:30', dates: ['2026-11-04', '2027-02-24', '2027-05-05'] },
-  { code: 'C', name: 'Coolibah', cohort: 'cohort1', startTime: '07:30', endTime: '08:30', dates: ['2026-11-10', '2027-03-02', '2027-05-11'] },
-  { code: 'D', name: 'Desert Oak', cohort: 'cohort1', startTime: '16:30', endTime: '17:30', dates: ['2026-11-18', '2027-03-10', '2027-05-19'] },
+  { code: 'A', meaning: 'Resilience, adaptability, new beginnings', name: 'Acacia', cohort: 'cohort1', startTime: '07:30', endTime: '08:30', dates: ['2026-10-27', '2027-02-16', '2027-04-27'] },
+  { code: 'B', meaning: 'Strength, regeneration, perseverance', name: 'Banksia', cohort: 'cohort1', startTime: '16:30', endTime: '17:30', dates: ['2026-11-04', '2027-02-24', '2027-05-05'] },
+  { code: 'C', meaning: 'Endurance, shelter, community', name: 'Coolibah', cohort: 'cohort1', startTime: '07:30', endTime: '08:30', dates: ['2026-11-10', '2027-03-02', '2027-05-11'] },
+  { code: 'D', meaning: 'Standing strong through adversity', name: 'Desert Oak', cohort: 'cohort1', startTime: '16:30', endTime: '17:30', dates: ['2026-11-18', '2027-03-10', '2027-05-19'] },
 
   // --- Cohort 2: groups E–P ---
   { code: 'E', name: 'Eucalyptus', cohort: 'cohort2', startTime: '07:30', endTime: '08:30', dates: ['2027-02-16', '2027-04-27', '2027-07-27'] },
