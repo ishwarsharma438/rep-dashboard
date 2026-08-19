@@ -1,84 +1,119 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
 /**
- * The teacher's chosen coaching group, held in localStorage.
+ * Coaching group membership, read from the Canvas Groups API.
  *
- * INTERIM STORE — MILESTONE 2. Group membership belongs in Canvas Groups; this
- * keeps the join flow usable before that exists. Two consequences worth knowing:
+ * Backed by /api/groups (all groups + live member counts) and /api/groups/my
+ * (this teacher's group). Both report a `configured` flag:
  *
- *   - It is per-browser. A teacher who switches device or clears site data
- *     appears not to have joined, and nobody else can see their choice.
- *   - Inside the Canvas iframe this is third-party storage, which Safari and
- *     hardened Chrome/Firefox settings block outright. Every access is guarded
- *     so a blocked store degrades to "no group joined" instead of throwing.
+ *   configured: true  — CANVAS_GROUP_CATEGORY_ID is set. Counts and membership
+ *                       are real, and joining writes to Canvas.
+ *   configured: false — fallback. The 16 groups come from static roadmap data
+ *                       with zero members, and join returns 503.
+ *
+ * While unconfigured, a join is held in memory only so the teacher can see the
+ * flow work. It is INTENTIONALLY lost on refresh — persisting it would imply a
+ * membership Canvas has no record of. The previous localStorage store was
+ * removed for exactly that reason.
  */
-const STORAGE_KEY = 'rep.coachingGroup'
-
-/** localStorage access that survives being blocked or unavailable. */
-function safeRead() {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY)
-  } catch {
-    return null
-  }
+const state = {
+  loading: true,
+  configured: false,
+  groups: [],
+  groupCode: null,
+  /** True when groupCode is an unsaved in-memory choice, not a Canvas membership. */
+  pendingOnly: false,
+  error: null,
 }
 
-function safeWrite(value) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, value)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// useSyncExternalStore requires a cached snapshot: returning a fresh value each
-// call would loop forever. The cache is refreshed only when the value changes.
-let snapshot = typeof window === 'undefined' ? null : safeRead()
 const listeners = new Set()
+let started = false
 
-function emit() {
-  const next = safeRead()
-  if (next === snapshot) return
-  snapshot = next
+function notify() {
   for (const l of listeners) l()
+}
+
+function setState(patch) {
+  Object.assign(state, patch)
+  notify()
+}
+
+const json = async (url, options) => {
+  const res = await fetch(url, options)
+  const body = await res.json().catch(() => null)
+  if (!res.ok) {
+    const err = new Error(body?.message ?? body?.error ?? `HTTP ${res.status}`)
+    err.status = res.status
+    err.body = body
+    throw err
+  }
+  return body
+}
+
+/** Loads groups + membership once per page load; safe to call repeatedly. */
+async function load() {
+  try {
+    const [all, mine] = await Promise.all([json('/api/groups'), json('/api/groups/my')])
+    const joined = mine?.groups?.[0] ?? null
+
+    setState({
+      loading: false,
+      configured: Boolean(all?.configured),
+      groups: all?.groups ?? [],
+      // A real Canvas membership always wins over an in-memory choice.
+      groupCode: joined?.code ?? (state.pendingOnly ? state.groupCode : null),
+      pendingOnly: joined ? false : state.pendingOnly,
+      error: null,
+    })
+  } catch (err) {
+    setState({ loading: false, error: err.message })
+  }
 }
 
 function subscribe(listener) {
   listeners.add(listener)
-  // Keeps a second tab in sync — 'storage' fires in other documents only.
-  window.addEventListener('storage', emit)
-  return () => {
-    listeners.delete(listener)
-    if (listeners.size === 0) window.removeEventListener('storage', emit)
+  if (!started) {
+    started = true
+    load()
   }
+  return () => listeners.delete(listener)
 }
 
-const getSnapshot = () => snapshot
-const getServerSnapshot = () => null
+const getSnapshot = () => state
+const getServerSnapshot = () => state
 
 /**
- * Returns { groupCode, join, canPersist }.
+ * Returns the group state plus `join(group)`.
  *
- * `join` is one-way by design: the confirmation copy tells the teacher the
- * choice cannot be changed, so there is deliberately no leave() here.
+ * join resolves to { ok, pending, message }:
+ *   ok      — the membership was written to Canvas
+ *   pending — accepted in memory only because groups are not configured yet
  */
 export default function useCoachingGroup() {
-  const groupCode = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
-  const join = useCallback((code) => {
-    const stored = safeWrite(code)
-    // Update in-process regardless: if storage is blocked the choice still
-    // holds for this session rather than silently doing nothing.
-    snapshot = stored ? safeRead() : code
-    for (const l of listeners) l()
-    return stored
+  // Covers the case where a component mounts after the first load settled.
+  useEffect(() => {
+    if (!started) {
+      started = true
+      load()
+    }
   }, [])
 
-  return { groupCode, join }
-}
+  const join = useCallback(async (group) => {
+    try {
+      await json(`/api/groups/${encodeURIComponent(group.id)}/join`, { method: 'POST' })
+      await load()
+      return { ok: true, pending: false }
+    } catch (err) {
+      if (err.status === 503) {
+        // Not wired to Canvas yet — hold the choice for this session only.
+        setState({ groupCode: group.code, pendingOnly: true })
+        return { ok: false, pending: true, message: 'Group selection will be available soon' }
+      }
+      return { ok: false, pending: false, message: err.message }
+    }
+  }, [])
 
-/** Non-hook read, for code outside a component. */
-export function readCoachingGroup() {
-  return safeRead()
+  return { ...snapshot, join, refresh: load }
 }

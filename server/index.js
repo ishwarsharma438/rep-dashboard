@@ -12,6 +12,7 @@ import canvasRoutes from './routes/canvas.js'
 import ltiRoutes from './routes/lti.js'
 import ltiSession from './middleware/ltiSession.js'
 import LTI_CONFIG, { ltiConfigErrors } from './config/ltiConfig.js'
+import { createSessionStore, redisStatus } from './config/redisSession.js'
 import {
   startAnnouncementPolling,
   subscribeUser,
@@ -31,6 +32,10 @@ app.set('trust proxy', 1)
 app.use(cors())
 app.use(express.json())
 
+// undefined when REDIS_URL is unset — express-session then falls back to its
+// MemoryStore, which is the pre-Redis behaviour.
+const sessionStore = createSessionStore()
+
 // saveUninitialized:false means no cookie is ever issued until a launch writes
 // to the session, so with LTI off this middleware is a no-op on the wire.
 //
@@ -39,6 +44,7 @@ app.use(express.json())
 // SameSite=None, and they only honour SameSite=None when it is also Secure —
 // so the two must be set together or the session silently fails to stick.
 const sessionMiddleware = session({
+  store: sessionStore,
   secret: LTI_CONFIG.sessionSecret ?? 'rep-dashboard-dev-secret',
   name: 'rep.sid',
   resave: false,
@@ -56,6 +62,18 @@ app.use(sessionMiddleware)
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
+})
+
+/**
+ * GET /health — liveness plus session-store state, for the platform's checks.
+ *
+ * 'degraded' means the app is serving but Redis is configured and unreachable,
+ * so logins will not persist. Still a 200: the process is healthy and must not
+ * be restarted out from under its users for this.
+ */
+app.get('/health', (req, res) => {
+  const redis = redisStatus()
+  res.json({ status: redis === 'disconnected' ? 'degraded' : 'ok', redis })
 })
 
 app.use('/lti', ltiRoutes)

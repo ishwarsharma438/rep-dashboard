@@ -120,7 +120,7 @@ function JoinModal({ group, onConfirm, onCancel }) {
           </button>
           <button
             type="button"
-            onClick={() => onConfirm(group.code)}
+            onClick={() => onConfirm(group)}
             className="flex-1 rounded-lg bg-rep-orange px-4 py-2 font-body text-sm font-semibold text-white hover:opacity-90"
           >
             Confirm
@@ -133,13 +133,16 @@ function JoinModal({ group, onConfirm, onCancel }) {
 
 /* ---------- group card ---------- */
 
-function GroupCard({ group, joinedCode, onJoin }) {
+function GroupCard({ group, remote, joinedCode, onJoin, busy }) {
   const isMine = joinedCode === group.code
   const hasGroup = Boolean(joinedCode)
 
-  // Only this teacher's own choice is knowable client-side — see useCoachingGroup.
-  const joined = isMine ? 1 : 0
-  const pct = Math.round((joined / GROUP_CAPACITY) * 100)
+  // Live count from Canvas when groups are configured. In fallback mode the API
+  // reports 0 for every group, so an unsaved in-memory pick shows as 1.
+  const limit = remote?.max_membership ?? GROUP_CAPACITY
+  const joined = remote ? remote.members_count + (isMine && remote.members_count === 0 ? 1 : 0) : 0
+  const full = joined >= limit
+  const pct = Math.min(100, Math.round((joined / limit) * 100))
 
   return (
     <div
@@ -183,7 +186,7 @@ function GroupCard({ group, joinedCode, onJoin }) {
       <div className="mt-3">
         <div className="flex items-baseline justify-between">
           <span className="font-body text-[11px] text-gray-500">
-            {joined} / {GROUP_CAPACITY} joined
+            {joined} / {limit} joined
           </span>
           {isMine && (
             <span className="font-body text-[11px] font-semibold text-rep-orange">You're in</span>
@@ -208,16 +211,22 @@ function GroupCard({ group, joinedCode, onJoin }) {
         ) : (
           <button
             type="button"
-            disabled={hasGroup}
+            disabled={hasGroup || full || busy}
             onClick={() => onJoin(group)}
-            title={hasGroup ? 'You have already joined a group' : undefined}
-            className={`w-full rounded-lg px-4 py-2 font-body text-sm font-semibold text-white ${
+            title={
               hasGroup
+                ? 'You have already joined a group'
+                : full
+                  ? 'This group is full'
+                  : undefined
+            }
+            className={`w-full rounded-lg px-4 py-2 font-body text-sm font-semibold text-white ${
+              hasGroup || full || busy
                 ? 'cursor-not-allowed bg-rep-navy/30'
                 : 'bg-rep-orange hover:opacity-90'
             }`}
           >
-            Join this group
+            {full ? 'Group full' : 'Join this group'}
           </button>
         )}
       </div>
@@ -350,15 +359,42 @@ function FilterRow({ label, options, value, onChange }) {
   )
 }
 
+/* ---------- toast ---------- */
+
+function Toast({ message, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+
+  return (
+    <div
+      role="status"
+      className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-rep-navy px-4 py-2.5 shadow-lg"
+    >
+      <p className="font-body text-sm text-white">{message}</p>
+    </div>
+  )
+}
+
 /* ---------- page ---------- */
 
 export default function SessionsPage() {
-  const { groupCode, join } = useCoachingGroup()
+  const { groupCode, groups: remoteGroups, configured, loading, error, join } = useCoachingGroup()
   const [tab, setTab] = useState('mine')
   const [pending, setPending] = useState(null)
+  const [toast, setToast] = useState(null)
+  const [busy, setBusy] = useState(false)
   const [cohort, setCohort] = useState('all')
   const [day, setDay] = useState('all')
   const [time, setTime] = useState('all')
+
+  // Canvas groups keyed by their letter, so a card can find its live counts.
+  const remoteByCode = useMemo(() => {
+    const map = new Map()
+    for (const g of remoteGroups ?? []) if (g.code) map.set(g.code, g)
+    return map
+  }, [remoteGroups])
 
   const groups = useMemo(
     () =>
@@ -372,10 +408,22 @@ export default function SessionsPage() {
     [cohort, day, time]
   )
 
-  const confirmJoin = (code) => {
-    join(code)
+  const confirmJoin = async (group) => {
+    const remote = remoteByCode.get(group.code)
+    setBusy(true)
+    // Canvas needs the real group id; fall back to the letter in fallback mode.
+    const result = await join({ ...group, id: remote?.id ?? group.code })
+    setBusy(false)
     setPending(null)
-    setTab('mine')
+
+    if (result.ok) {
+      setTab('mine')
+    } else if (result.pending) {
+      setToast(result.message)
+      setTab('mine')
+    } else {
+      setToast(result.message ?? 'Could not join that group')
+    }
   }
 
   const TABS = [
@@ -420,7 +468,16 @@ export default function SessionsPage() {
           <p className="mt-3 font-body text-xs text-gray-500">
             {groups.length} of {COACHING_GROUPS.length} groups
             {groupCode ? ' · you have already joined a group' : ''}
+            {!loading && !configured
+              ? ' · group selection opens once Canvas groups are set up'
+              : ''}
           </p>
+
+          {error && (
+            <p className="mt-2 rounded-lg bg-rep-red/10 px-3 py-2 font-body text-xs text-rep-red">
+              Couldn't load group membership: {error}
+            </p>
+          )}
 
           {groups.length === 0 ? (
             <p className="mt-3 rounded-xl bg-white p-8 text-center font-body text-sm text-gray-500 shadow-sm">
@@ -432,8 +489,10 @@ export default function SessionsPage() {
                 <GroupCard
                   key={g.code}
                   group={g}
+                  remote={remoteByCode.get(g.code)}
                   joinedCode={groupCode}
                   onJoin={setPending}
+                  busy={busy}
                 />
               ))}
             </div>
@@ -448,6 +507,8 @@ export default function SessionsPage() {
           onCancel={() => setPending(null)}
         />
       )}
+
+      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </div>
   )
 }

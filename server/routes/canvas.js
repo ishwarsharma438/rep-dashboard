@@ -9,7 +9,8 @@ import {
   getGroups,
   getUserProfile,
 } from '../services/canvasData.js'
-import { cachedGet } from '../services/canvasApi.js'
+import canvasApi, { cachedGet, invalidateCache } from '../services/canvasApi.js'
+import { COACHING_GROUPS } from '../../src/data/roadmapEvents.js'
 import { emitToUser } from '../services/realtime.js'
 import { setLastKnown } from '../services/pollingService.js'
 
@@ -116,6 +117,192 @@ router.post(
 
     await refreshDiscussions(req.canvasUserId)
     res.status(201).json(entry)
+  })
+)
+
+/* ---- Coaching group membership (Canvas Groups) ----
+ *
+ * Two modes, switched by CANVAS_GROUP_CATEGORY_ID:
+ *
+ *   unset  — fallback. Reads return the 16 static roadmap groups with zero
+ *            members; writes refuse with 503. Nothing touches Canvas.
+ *   set    — live. Reads come from the Canvas group category, and join/leave
+ *            write real memberships.
+ *
+ * The gate is checked per request rather than at boot so the app can be
+ * activated by setting the variable and restarting, with no code change.
+ */
+
+/** The configured category id, or null when group management is not set up. */
+const groupCategoryId = () => process.env.CANVAS_GROUP_CATEGORY_ID?.trim() || null
+
+/** Canvas caps each coaching group at this many teachers. */
+const GROUP_MAX_MEMBERSHIP = 12
+
+/** 'A - Acacia' -> 'A'. Canvas group names are created in that shape. */
+function codeFromName(name = '') {
+  const match = /^([A-P])\s*[-—]/.exec(name.trim())
+  return match ? match[1] : null
+}
+
+/** The 16 roadmap groups shaped like the Canvas payload, with no members. */
+function fallbackGroups() {
+  return COACHING_GROUPS.map((g) => ({
+    id: g.code,
+    code: g.code,
+    name: `${g.code} - ${g.name}`,
+    members_count: 0,
+    max_membership: GROUP_MAX_MEMBERSHIP,
+    members: [],
+  }))
+}
+
+const shapeCanvasGroup = (g) => ({
+  id: g.id,
+  code: codeFromName(g.name),
+  name: g.name,
+  members_count: g.members_count ?? 0,
+  max_membership: g.max_membership ?? GROUP_MAX_MEMBERSHIP,
+  members: (g.users ?? []).map((u) => ({ id: u.id, name: u.name ?? u.display_name ?? null })),
+})
+
+/**
+ * GET /api/groups — every coaching group with its current membership count.
+ *
+ * `configured: false` tells the UI it is looking at static data, so it can
+ * explain why joining is unavailable instead of silently failing.
+ */
+router.get(
+  '/groups',
+  asyncHandler(async (req, res) => {
+    const categoryId = groupCategoryId()
+
+    if (!categoryId) {
+      return res.json({ configured: false, groups: fallbackGroups() })
+    }
+
+    const { data } = await cachedGet(
+      `/group_categories/${encodeURIComponent(categoryId)}/groups`,
+      { params: { include: ['users'], per_page: 50 } }
+    )
+
+    const groups = Array.isArray(data) ? data : []
+    res.json({ configured: true, groups: groups.map(shapeCanvasGroup) })
+  })
+)
+
+/**
+ * GET /api/groups/my — the coaching group this teacher belongs to.
+ *
+ * Declared before '/groups/:userId' on purpose: Express matches in order, and
+ * the parameterised route would otherwise capture 'my' as a user id.
+ */
+router.get(
+  '/groups/my',
+  asyncHandler(async (req, res) => {
+    const categoryId = groupCategoryId()
+
+    if (!categoryId) {
+      return res.json({ configured: false, groups: [] })
+    }
+
+    const { data } = await cachedGet(
+      `/users/${encodeURIComponent(req.canvasUserId)}/groups`,
+      { params: { per_page: 100 } }
+    )
+
+    const mine = (Array.isArray(data) ? data : []).filter(
+      (g) => String(g.group_category_id) === String(categoryId)
+    )
+
+    res.json({ configured: true, groups: mine.map(shapeCanvasGroup) })
+  })
+)
+
+/**
+ * POST /api/groups/:groupId/join — add this teacher to a coaching group.
+ *
+ * Inert until CANVAS_GROUP_CATEGORY_ID is set. This is the first Canvas write
+ * outside the discussion routes, so it is deliberately gated and validates
+ * capacity and single-membership before posting.
+ */
+router.post(
+  '/groups/:groupId/join',
+  asyncHandler(async (req, res) => {
+    const categoryId = groupCategoryId()
+
+    if (!categoryId) {
+      return res.status(503).json({ error: 'Group management not configured yet', status: 503 })
+    }
+
+    const userId = req.canvasUserId
+    const { groupId } = req.params
+
+    // One group per teacher — the join is described as final in the UI.
+    const { data: userGroups } = await cachedGet(
+      `/users/${encodeURIComponent(userId)}/groups`,
+      { params: { per_page: 100 } }
+    )
+    const existing = (Array.isArray(userGroups) ? userGroups : []).find(
+      (g) => String(g.group_category_id) === String(categoryId)
+    )
+
+    if (existing) {
+      return res.status(409).json({
+        error: true,
+        message: `You have already joined ${existing.name}`,
+      })
+    }
+
+    // Capacity is enforced here as well as by Canvas, so a full group returns a
+    // readable message rather than a raw Canvas validation error.
+    const { data: group } = await cachedGet(`/groups/${encodeURIComponent(groupId)}`)
+    const limit = group?.max_membership ?? GROUP_MAX_MEMBERSHIP
+    if ((group?.members_count ?? 0) >= limit) {
+      return res.status(409).json({ error: true, message: 'This group is already full' })
+    }
+
+    const { data: membership } = await canvasApi.post(
+      `/groups/${encodeURIComponent(groupId)}/memberships`,
+      { user_id: userId }
+    )
+
+    // The cached group lists now understate this membership.
+    invalidateCache(`/group_categories/${categoryId}/groups`)
+    invalidateCache(`/users/${userId}/groups`)
+    invalidateCache(`/groups/${groupId}`)
+
+    res.status(201).json({ ok: true, membership })
+  })
+)
+
+/**
+ * DELETE /api/groups/:groupId/leave — remove this teacher from a group.
+ *
+ * Also gated. Present so membership is reversible by an admin even though the
+ * teacher-facing flow presents the choice as final.
+ */
+router.delete(
+  '/groups/:groupId/leave',
+  asyncHandler(async (req, res) => {
+    const categoryId = groupCategoryId()
+
+    if (!categoryId) {
+      return res.status(503).json({ error: 'Group management not configured yet', status: 503 })
+    }
+
+    const userId = req.canvasUserId
+    const { groupId } = req.params
+
+    await canvasApi.delete(
+      `/groups/${encodeURIComponent(groupId)}/users/${encodeURIComponent(userId)}`
+    )
+
+    invalidateCache(`/group_categories/${categoryId}/groups`)
+    invalidateCache(`/users/${userId}/groups`)
+    invalidateCache(`/groups/${groupId}`)
+
+    res.json({ ok: true })
   })
 )
 

@@ -86,7 +86,10 @@ export function upcomingFor(groupCode, today = new Date(), limit = PREVIEW_COUNT
 }
 
 export default function ComingUp() {
-  const { groupCode } = useCoachingGroup()
+  // Membership now comes from /api/groups/my via the shared hook. While it is
+  // in flight groupCode is null, which shows the universal events — the same
+  // list a teacher without a group sees, so there is no misleading flash.
+  const { groupCode, loading } = useCoachingGroup()
   const days = weekStrip()
   const upcoming = upcomingFor(groupCode)
 
@@ -146,7 +149,7 @@ export default function ComingUp() {
         )}
       </div>
 
-      {!groupCode && (
+      {!groupCode && !loading && (
         <p className="mt-3 font-body text-xs text-gray-500">
           Join a coaching group to see your own sessions here.
         </p>
