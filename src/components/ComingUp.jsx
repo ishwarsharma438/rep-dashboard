@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { VideoIcon } from './icons.jsx'
 
@@ -68,12 +69,12 @@ export default function ComingUp() {
     <div className="rounded-2xl bg-white p-5 shadow-md">
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <h2 className="font-heading text-lg font-semibold text-rep-navy">Coming Up</h2>
-        <button
-          type="button"
+        <Link
+          to="/calendar"
           className="font-body text-xs font-semibold text-rep-orange hover:underline"
         >
           View full calendar
-        </button>
+        </Link>
       </div>
 
       {/* Week strip, Mon–Sun, today filled */}

@@ -6,7 +6,7 @@ import CoursesPage from './pages/CoursesPage.jsx'
 import AnnouncementsPage from './pages/AnnouncementsPage.jsx'
 import ResourcesPage from './pages/ResourcesPage.jsx'
 import SessionsComingSoon from './pages/SessionsComingSoon.jsx'
-import CalendarComingSoon from './pages/CalendarComingSoon.jsx'
+import CalendarPage from './pages/CalendarPage.jsx'
 import { ProfileProvider } from './context/ProfileContext.jsx'
 import { DashboardDataProvider } from './context/DashboardDataContext.jsx'
 import { MenuIcon } from './components/icons.jsx'
@@ -43,9 +43,10 @@ function Shell() {
             <Route path="/announcements" element={<AnnouncementsPage />} />
             <Route path="/resources" element={<ResourcesPage />} />
 
-            {/* Both depend on the Calendly/Zoom work in a later milestone. */}
+            <Route path="/calendar" element={<CalendarPage />} />
+
+            {/* Depends on the Calendly/Zoom work in a later milestone. */}
             <Route path="/sessions" element={<SessionsComingSoon />} />
-            <Route path="/calendar" element={<CalendarComingSoon />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

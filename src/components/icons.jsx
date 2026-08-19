@@ -111,6 +111,22 @@ export function CloseIcon(props) {
   )
 }
 
+export function ChevronLeftIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m15 5-7 7 7 7" />
+    </svg>
+  )
+}
+
+export function ChevronRightIcon(props) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m9 5 7 7-7 7" />
+    </svg>
+  )
+}
+
 export function ChevronDownIcon(props) {
   return (
     <svg {...base} {...props}>
