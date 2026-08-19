@@ -1,9 +1,10 @@
-// BOOKING FUNCTIONALITY — MILESTONE 2 SCOPE. Visual only, not wired to Calendly/Zoom yet.
-//
-// The "Book your sessions" buttons stay disabled until then. The schedule
-// buttons are different: those dates are already published in the roadmap, so
-// they link straight to the calendar.
+// Three kinds of card, distinguished by which field a session carries:
+//   `to`    — schedule is already published; links into the calendar.
+//   `books` — booked externally on Calendly; opens BookingModal in that mode.
+//   neither — nothing to do yet; stays disabled with a "Coming soon" hint.
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import BookingModal from './BookingModal.jsx'
 import { CalendarPlusIcon, MapPinIcon, PeopleIcon, PersonIcon, VideoIcon } from './icons.jsx'
 
 // Placeholder counts — no booking data source exists until Milestone 2.
@@ -15,6 +16,7 @@ const SESSIONS = [
     title: 'Mental Health First Aid Sessions',
     count: '0 of 1 booked',
     cta: 'Book your sessions',
+    books: 'mhfa',
     Icon: CalendarPlusIcon,
   },
   {
@@ -22,6 +24,7 @@ const SESSIONS = [
     title: 'One-on-One Coaching Sessions',
     count: '0 of 2 booked',
     cta: 'Book your sessions',
+    books: 'coaching',
     Icon: PersonIcon,
   },
   {
@@ -50,8 +53,8 @@ const SESSIONS = [
   },
 ]
 
-function SessionCard({ session }) {
-  const { title, count, cta, to, Icon } = session
+function SessionCard({ session, onBook }) {
+  const { title, count, cta, to, books, Icon } = session
 
   return (
     <div className="flex flex-col rounded-2xl bg-white p-5 shadow-md">
@@ -69,6 +72,14 @@ function SessionCard({ session }) {
         >
           {cta}
         </Link>
+      ) : books ? (
+        <button
+          type="button"
+          onClick={() => onBook(books)}
+          className="mt-4 w-full rounded-lg bg-rep-orange px-4 py-2 font-body text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          {cta}
+        </button>
       ) : (
         <div className="group relative mt-4">
           <button
@@ -89,6 +100,9 @@ function SessionCard({ session }) {
 }
 
 export default function SessionsSection() {
+  // null, or the BookingModal mode currently open ('coaching' | 'mhfa').
+  const [booking, setBooking] = useState(null)
+
   return (
     <section>
       <h2 className="mb-3 font-heading text-lg font-semibold text-rep-navy">
@@ -97,9 +111,11 @@ export default function SessionsSection() {
       {/* Five cards: 1 col on mobile, 2 on tablet, 3 on desktop (3 + 2 rows). */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SESSIONS.map((s) => (
-          <SessionCard key={s.key} session={s} />
+          <SessionCard key={s.key} session={s} onBook={setBooking} />
         ))}
       </div>
+
+      {booking && <BookingModal mode={booking} onClose={() => setBooking(null)} />}
     </section>
   )
 }
