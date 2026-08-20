@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import BookingModal from './BookingModal.jsx'
+import { useProfile } from '../context/ProfileContext.jsx'
 import { CalendarPlusIcon, MapPinIcon, PeopleIcon, PersonIcon, VideoIcon } from './icons.jsx'
 
 // Placeholder counts — no booking data source exists until Milestone 2.
@@ -103,6 +104,11 @@ export default function SessionsSection() {
   // null, or the BookingModal mode currently open ('coaching' | 'mhfa').
   const [booking, setBooking] = useState(null)
 
+  // The Canvas id travels to Calendly as utm_content so n8n can tie a booking
+  // back to this teacher. It lives on the profile, not the dashboard data
+  // context — same source as the "Welcome, <name>" heading.
+  const { user } = useProfile()
+
   return (
     <section>
       <h2 className="mb-3 font-heading text-lg font-semibold text-rep-navy">
@@ -115,7 +121,13 @@ export default function SessionsSection() {
         ))}
       </div>
 
-      {booking && <BookingModal mode={booking} onClose={() => setBooking(null)} />}
+      {booking && (
+        <BookingModal
+          mode={booking}
+          canvasUserId={user?.id}
+          onClose={() => setBooking(null)}
+        />
+      )}
     </section>
   )
 }

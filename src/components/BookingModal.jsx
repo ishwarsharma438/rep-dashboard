@@ -11,7 +11,32 @@ import { CalendarPlusIcon, CloseIcon, PersonIcon } from './icons.jsx'
  * Calendly is opened in a new tab rather than embedded: inside the Canvas
  * iframe the dashboard is already a nested browsing context, and Calendly's
  * frame-ancestors policy would refuse a second level of nesting.
+ *
+ * The teacher's Canvas id rides along as utm_content. Calendly passes UTM
+ * parameters through to its webhooks, so n8n can attribute a booking to a
+ * teacher without the dashboard being involved in the booking at all.
  */
+
+/**
+ * `url` with utm_content=<canvasUserId> added.
+ *
+ * Returns the URL untouched when there is no id — a booking without
+ * attribution is better than one that reads "utm_content=undefined". Uses the
+ * URL API rather than string concatenation so an existing query string on a
+ * Calendly link keeps working.
+ */
+export function withUserId(url, canvasUserId) {
+  if (canvasUserId === null || canvasUserId === undefined || canvasUserId === '') return url
+
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set('utm_content', String(canvasUserId))
+    return parsed.toString()
+  } catch {
+    // Malformed link in coachingLinks.js — open it as written rather than fail.
+    return url
+  }
+}
 
 /**
  * Opens an external booking page. Returns false if the browser blocked it.
@@ -49,7 +74,7 @@ function CoachCard({ coach, onOpen }) {
   )
 }
 
-export default function BookingModal({ mode, onClose }) {
+export default function BookingModal({ mode, canvasUserId, onClose }) {
   // { name, url, blocked } once a booking has been attempted, so the teacher is
   // told what happened — including when the browser blocked the new tab.
   const [attempt, setAttempt] = useState(null)
@@ -63,13 +88,15 @@ export default function BookingModal({ mode, onClose }) {
   const isCoaching = mode === 'coaching'
 
   const handleCoach = (coach) => {
-    const ok = openBooking(coach.calendlyUrl)
-    setAttempt({ name: coach.name, url: coach.calendlyUrl, blocked: !ok })
+    const url = withUserId(coach.calendlyUrl, canvasUserId)
+    const ok = openBooking(url)
+    setAttempt({ name: coach.name, url, blocked: !ok })
   }
 
   const handleMhfa = () => {
-    const ok = openBooking(MHFA_BOOKING_URL)
-    setAttempt({ name: 'MHFA workshop', url: MHFA_BOOKING_URL, blocked: !ok })
+    const url = withUserId(MHFA_BOOKING_URL, canvasUserId)
+    const ok = openBooking(url)
+    setAttempt({ name: 'MHFA workshop', url, blocked: !ok })
   }
 
   return (
