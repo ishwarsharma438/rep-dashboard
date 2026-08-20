@@ -1,12 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   EVENT_TYPE_META,
   EVENT_TYPE_ORDER,
   ROADMAP_EVENTS,
 } from '../data/roadmapEvents.js'
 import {
+  extractZoomUrl,
+  mapCanvasEvent,
+  mergeCanvasEvents,
+  monthRange,
+  sanitizeDescriptionHtml,
+} from '../lib/canvasEvents.js'
+import {
   CalendarIcon,
   CalendarPlusIcon,
+  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   MapPinIcon,
@@ -188,6 +196,11 @@ function TypeChip({ type, active, onToggle }) {
 
 function EventDetail({ event }) {
   const meta = EVENT_TYPE_META[event.type]
+  const zoomUrl = extractZoomUrl(event.descriptionHtml)
+  const descriptionHtml = useMemo(
+    () => sanitizeDescriptionHtml(event.descriptionHtml),
+    [event.descriptionHtml]
+  )
 
   return (
     <li className={`rounded-xl border border-l-4 border-gray-100 bg-white p-4 ${meta.accent}`}>
@@ -203,6 +216,12 @@ function EventDetail({ event }) {
         {event.capacity && (
           <span className="rounded-full bg-gray-100 px-2 py-0.5 font-body text-[10px] font-semibold text-gray-600">
             {event.capacity} places
+          </span>
+        )}
+        {event.booked && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-body text-[10px] font-bold text-green-700">
+            <CheckIcon className="h-3 w-3" />
+            Booked
           </span>
         )}
       </div>
@@ -224,6 +243,28 @@ function EventDetail({ event }) {
 
       {event.description && (
         <p className="mt-2 font-body text-xs leading-relaxed text-gray-600">{event.description}</p>
+      )}
+
+      {descriptionHtml && (
+        // Sanitised in canvasEvents.js: tags are allowlisted and every
+        // attribute except a safe href is stripped, so the Zoom link stays
+        // clickable without the description being an injection point.
+        <div
+          className="mt-2 font-body text-xs leading-relaxed text-gray-600 [&_a]:font-semibold [&_a]:text-rep-orange [&_a]:underline"
+          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+        />
+      )}
+
+      {zoomUrl && (
+        <a
+          href={zoomUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-rep-navy px-3 py-2 font-body text-xs font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <VideoIcon className="h-3.5 w-3.5" />
+          Join via Zoom
+        </a>
       )}
 
       <button
@@ -250,9 +291,51 @@ export default function CalendarPage() {
   // Empty set = no filter applied = show everything.
   const [hidden, setHidden] = useState(() => new Set())
 
+  // Canvas bookings, keyed by event id and accumulated across the months the
+  // teacher visits, so stepping back to an earlier month doesn't blank it.
+  const [canvasEvents, setCanvasEvents] = useState(() => new Map())
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const { startDate, endDate } = monthRange(cursor.year, cursor.month)
+
+    fetch(`/api/calendar?start_date=${startDate}&end_date=${endDate}`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then((res) => {
+        // 401 = standalone mode with no LTI session. There are simply no
+        // personal bookings to show, which is not an error worth surfacing.
+        if (res.status === 401) return []
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((rows) => {
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapCanvasEvent).filter(Boolean)
+        if (mapped.length === 0) return
+
+        setCanvasEvents((current) => {
+          const next = new Map(current)
+          for (const e of mapped) next.set(e.id, e)
+          return next
+        })
+      })
+      .catch((err) => {
+        // Never blocks the roadmap calendar — it renders without Canvas either way.
+        if (err.name !== 'AbortError') console.warn(`[calendar] Canvas events unavailable: ${err.message}`)
+      })
+
+    return () => controller.abort()
+  }, [cursor])
+
+  const allEvents = useMemo(
+    () => mergeCanvasEvents(ROADMAP_EVENTS, [...canvasEvents.values()]),
+    [canvasEvents]
+  )
+
   const visibleEvents = useMemo(
-    () => ROADMAP_EVENTS.filter((e) => !hidden.has(e.type)),
-    [hidden]
+    () => allEvents.filter((e) => !hidden.has(e.type)),
+    [allEvents, hidden]
   )
 
   /** 'YYYY-MM-DD' -> events on that day, multi-day events on each of their days. */
@@ -282,6 +365,7 @@ export default function CalendarPage() {
   }, [visibleEvents, todayIso])
 
   const monthHasEvents = cells.some((c) => c.inMonth && eventsByDate.has(c.iso))
+  const bookedCount = visibleEvents.filter((e) => e.booked).length
 
   const step = (delta) =>
     setCursor(({ year, month }) => {
@@ -308,7 +392,8 @@ export default function CalendarPage() {
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="font-heading text-2xl font-bold text-rep-navy sm:text-3xl">Calendar</h1>
         <span className="font-body text-sm text-gray-500">
-          {visibleEvents.length} program {visibleEvents.length === 1 ? 'event' : 'events'}
+          {visibleEvents.length} {visibleEvents.length === 1 ? 'event' : 'events'}
+          {bookedCount > 0 ? ` · ${bookedCount} booked` : ''}
         </span>
       </div>
 
@@ -411,9 +496,10 @@ export default function CalendarPage() {
                     {dayEvents.slice(0, 2).map((e) => (
                       <span
                         key={e.id}
-                        className={`truncate rounded px-1 py-0.5 font-body text-[9px] font-semibold leading-tight ${EVENT_TYPE_META[e.type].pill}`}
+                        className={`flex items-center gap-0.5 truncate rounded px-1 py-0.5 font-body text-[9px] font-semibold leading-tight ${EVENT_TYPE_META[e.type].pill}`}
                       >
-                        {e.title}
+                        {e.booked && <CheckIcon className="h-2 w-2 shrink-0" />}
+                        <span className="truncate">{e.title}</span>
                       </span>
                     ))}
                     {dayEvents.length > 2 && (
@@ -459,6 +545,12 @@ export default function CalendarPage() {
                 </span>
               </span>
             ))}
+            {bookedCount > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckIcon className="h-3 w-3 text-green-600" />
+                <span className="font-body text-[11px] text-gray-600">Your booking</span>
+              </span>
+            )}
           </div>
         </div>
 

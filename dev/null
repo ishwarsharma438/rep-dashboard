@@ -1,0 +1,787 @@
+// src/pages/CalendarPage.jsx
+import { useEffect, useMemo, useState } from "react";
+
+// src/data/roadmapEvents.js
+var EVENT_TYPE_META = {
+  webinar: {
+    label: "Webinars",
+    short: "Webinar",
+    dot: "bg-rep-orange",
+    pill: "bg-rep-orange/12 text-rep-orange",
+    chipOn: "bg-rep-orange text-white border-rep-orange",
+    chipOff: "bg-white text-rep-orange border-rep-orange/30 hover:border-rep-orange",
+    accent: "border-l-rep-orange"
+  },
+  group_coaching: {
+    label: "Group Coaching",
+    short: "Group Coaching",
+    dot: "bg-rep-navy",
+    pill: "bg-rep-navy/12 text-rep-navy",
+    chipOn: "bg-rep-navy text-white border-rep-navy",
+    chipOff: "bg-white text-rep-navy border-rep-navy/30 hover:border-rep-navy",
+    accent: "border-l-rep-navy"
+  },
+  mhfa: {
+    label: "MHFA Workshops",
+    short: "MHFA",
+    dot: "bg-teal-600",
+    pill: "bg-teal-600/12 text-teal-700",
+    chipOn: "bg-teal-600 text-white border-teal-600",
+    chipOff: "bg-white text-teal-700 border-teal-600/30 hover:border-teal-600",
+    accent: "border-l-teal-600"
+  },
+  coaching_1on1: {
+    label: "One-on-One Coaching",
+    short: "1:1 Coaching",
+    dot: "bg-purple-600",
+    pill: "bg-purple-600/12 text-purple-700",
+    chipOn: "bg-purple-600 text-white border-purple-600",
+    chipOff: "bg-white text-purple-700 border-purple-600/30 hover:border-purple-600",
+    accent: "border-l-purple-600"
+  },
+  f2f: {
+    label: "Face-to-Face Workshops",
+    short: "F2F Workshop",
+    dot: "bg-rep-red",
+    pill: "bg-rep-red/12 text-rep-red",
+    chipOn: "bg-rep-red text-white border-rep-red",
+    chipOff: "bg-white text-rep-red border-rep-red/30 hover:border-rep-red",
+    accent: "border-l-rep-red"
+  }
+};
+var EVENT_TYPE_ORDER = ["webinar", "group_coaching", "mhfa", "coaching_1on1", "f2f"];
+var WEBINARS = [
+  {
+    id: "webinar-1",
+    title: "Kickoff Webinar #1",
+    type: "webinar",
+    startDate: "2026-10-12",
+    description: "Program kickoff \u2014 introduction to the Resilient Educators Partnership.",
+    cohort: "all",
+    location: "online"
+  },
+  {
+    id: "webinar-2",
+    title: "Kickoff Webinar #2",
+    type: "webinar",
+    startDate: "2027-02-15",
+    description: "Cohort 2 kickoff \u2014 introduction for teachers joining in Term 1, 2027.",
+    cohort: "cohort2",
+    location: "online"
+  },
+  {
+    id: "webinar-3",
+    title: "Webinar #3",
+    type: "webinar",
+    startDate: "2027-04-19",
+    startTime: "17:00",
+    endTime: "18:00",
+    description: "Whole-program webinar.",
+    cohort: "all",
+    location: "online"
+  },
+  {
+    id: "webinar-4",
+    title: "Webinar #4",
+    type: "webinar",
+    startDate: "2027-07-19",
+    startTime: "17:00",
+    endTime: "18:00",
+    description: "Whole-program webinar.",
+    cohort: "all",
+    location: "online"
+  }
+];
+var F2F_WORKSHOPS = [
+  {
+    id: "f2f-1",
+    title: "Face-to-Face Workshop #1",
+    type: "f2f",
+    startDate: "2026-10-22",
+    description: "Full-day in-person workshop.",
+    cohort: "all",
+    location: "in-person"
+  },
+  {
+    id: "f2f-2",
+    title: "Face-to-Face Workshop #2",
+    type: "f2f",
+    startDate: "2027-02-25",
+    description: "Full-day in-person workshop. Mandatory for Cohort 2, optional for Cohort 1.",
+    cohort: "all",
+    location: "in-person"
+  },
+  {
+    id: "f2f-3",
+    title: "Final Wrap-Up Workshop",
+    type: "f2f",
+    startDate: "2027-09-09",
+    description: "Full-day in-person workshop closing the program.",
+    cohort: "all",
+    location: "in-person"
+  }
+];
+var MHFA_SCHEDULE = [
+  { n: 1, startDate: "2026-10-26", endDate: "2026-10-27", location: "in-person", term: "Term 4, 2026" },
+  { n: 2, startDate: "2026-11-05", endDate: "2026-11-06", location: "in-person", term: "Term 4, 2026" },
+  { n: 3, startDate: "2026-11-09", endDate: "2026-11-10", location: "online", term: "Term 4, 2026" },
+  { n: 4, startDate: "2027-03-01", endDate: "2027-03-02", location: "in-person", term: "Term 1, 2027" },
+  { n: 5, startDate: "2027-03-04", endDate: "2027-03-05", location: "in-person", term: "Term 1, 2027" },
+  { n: 6, startDate: "2027-03-08", endDate: "2027-03-09", location: "online", term: "Term 1, 2027" },
+  { n: 7, startDate: "2027-07-26", endDate: "2027-07-27", location: "in-person", term: "Term 3, 2027" },
+  { n: 8, startDate: "2027-07-29", endDate: "2027-07-30", location: "in-person", term: "Term 3, 2027" },
+  { n: 9, startDate: "2027-08-02", endDate: "2027-08-03", location: "online", term: "Term 3, 2027" },
+  { n: 10, startDate: "2027-08-05", endDate: "2027-08-06", location: "in-person", term: "Term 3, 2027" },
+  { n: 11, startDate: "2027-08-09", endDate: "2027-08-10", location: "online", term: "Term 3, 2027" },
+  { n: 12, startDate: "2027-08-12", endDate: "2027-08-13", location: "in-person", term: "Term 3, 2027" }
+];
+var MHFA_WORKSHOPS = MHFA_SCHEDULE.map(({ n, startDate, endDate, location, term }) => ({
+  id: `mhfa-${n}`,
+  title: `MHFA Workshop #${n}`,
+  type: "mhfa",
+  startDate,
+  endDate,
+  description: `Two-day Mental Health First Aid certification (${term}). One booking covers both days.`,
+  cohort: "all",
+  capacity: 24,
+  location
+}));
+var COACHING_GROUPS = [
+  // --- Cohort 1: groups A–D ---
+  { code: "A", meaning: "Resilience, adaptability, new beginnings", name: "Acacia", cohort: "cohort1", startTime: "07:30", endTime: "08:30", dates: ["2026-10-27", "2027-02-16", "2027-04-27"] },
+  { code: "B", meaning: "Strength, regeneration, perseverance", name: "Banksia", cohort: "cohort1", startTime: "16:30", endTime: "17:30", dates: ["2026-11-04", "2027-02-24", "2027-05-05"] },
+  { code: "C", meaning: "Endurance, shelter, community", name: "Coolibah", cohort: "cohort1", startTime: "07:30", endTime: "08:30", dates: ["2026-11-10", "2027-03-02", "2027-05-11"] },
+  { code: "D", meaning: "Standing strong through adversity", name: "Desert Oak", cohort: "cohort1", startTime: "16:30", endTime: "17:30", dates: ["2026-11-18", "2027-03-10", "2027-05-19"] },
+  // --- Cohort 2: groups E–P ---
+  { code: "E", name: "Eucalyptus", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-02-16", "2027-04-27", "2027-07-27"] },
+  { code: "F", name: "Frangipani", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-02-16", "2027-04-27", "2027-07-27"] },
+  { code: "G", name: "Ghost Gum", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-02-24", "2027-05-05", "2027-08-04"] },
+  { code: "H", name: "Huon Pine", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-02-24", "2027-05-05", "2027-08-04"] },
+  { code: "I", name: "Illawarra Flame Tree", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-03-02", "2027-05-11", "2027-08-10"] },
+  { code: "J", name: "Jarrah", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-03-02", "2027-05-11", "2027-08-10"] },
+  { code: "K", name: "Kurrajong", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-03-10", "2027-05-19", "2027-08-18"] },
+  { code: "L", name: "Lilly Pilly", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-03-10", "2027-05-19", "2027-08-18"] },
+  { code: "M", name: "Melaleuca/Paperbark", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-03-16", "2027-05-25", "2027-08-24"] },
+  { code: "N", name: "Norfolk Island Pine", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-03-16", "2027-05-25", "2027-08-24"] },
+  { code: "O", name: "Orange Thorn", cohort: "cohort2", startTime: "07:30", endTime: "08:30", dates: ["2027-03-24", "2027-06-02", "2027-09-01"] },
+  { code: "P", name: "Peppermint Gum", cohort: "cohort2", startTime: "16:30", endTime: "17:30", dates: ["2027-03-24", "2027-06-02", "2027-09-01"] }
+];
+var GROUP_COACHING = COACHING_GROUPS.flatMap(
+  (g) => g.dates.map((date, i) => ({
+    id: `gc-${g.code}-${i + 1}`,
+    title: `Group Coaching \u2014 ${g.code} (${g.name})`,
+    type: "group_coaching",
+    startDate: date,
+    startTime: g.startTime,
+    endTime: g.endTime,
+    description: `Session ${i + 1} of 3 for coaching group ${g.code} \u2014 ${g.name}.`,
+    cohort: g.cohort,
+    location: "online",
+    group: `${g.code} - ${g.name}`
+  }))
+);
+var ONE_ON_ONE_COACHING = [];
+var ROADMAP_EVENTS = [
+  ...WEBINARS,
+  ...F2F_WORKSHOPS,
+  ...MHFA_WORKSHOPS,
+  ...GROUP_COACHING,
+  ...ONE_ON_ONE_COACHING
+];
+
+// src/lib/canvasEvents.js
+function canvasEventType(title = "") {
+  if (/mhfa|mental health first aid/i.test(title)) return "mhfa";
+  if (/coaching/i.test(title)) return "coaching_1on1";
+  return "webinar";
+}
+var pad = (n) => String(n).padStart(2, "0");
+function splitInstant(iso) {
+  if (!iso) return { date: null, time: null };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: null, time: null };
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  };
+}
+function mapCanvasEvent(raw) {
+  const start = splitInstant(raw?.startAt);
+  if (!start.date) return null;
+  const end = splitInstant(raw?.endAt);
+  const allDay = Boolean(raw.allDay);
+  return {
+    id: `canvas-${raw.id}`,
+    title: raw.title ?? "Untitled booking",
+    type: canvasEventType(raw.title ?? ""),
+    startDate: start.date,
+    // Only span days when Canvas actually says so; a same-day end would
+    // otherwise render the event twice on the grid.
+    endDate: end.date && end.date !== start.date ? end.date : void 0,
+    startTime: allDay ? void 0 : start.time ?? void 0,
+    endTime: allDay ? void 0 : end.time ?? void 0,
+    descriptionHtml: raw.description ?? null,
+    location: raw.location ? "in-person" : "online",
+    locationName: raw.location ?? null,
+    canvasUrl: raw.url ?? null,
+    cohort: "all",
+    source: "canvas"
+  };
+}
+var ALLOWED_TAGS = /* @__PURE__ */ new Set(["a", "b", "strong", "i", "em", "p", "br", "ul", "ol", "li", "span", "div"]);
+function safeHref(value = "") {
+  return /^(https?:\/\/|mailto:)/i.test(value.trim()) ? value.trim() : null;
+}
+function sanitizeDescriptionHtml(html) {
+  if (!html || typeof html !== "string") return "";
+  return html.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, "").replace(/<(script|style)\b[^>]*>/gi, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (_all, slash, rawName, attrs) => {
+    const name = rawName.toLowerCase();
+    if (!ALLOWED_TAGS.has(name)) return "";
+    if (slash) return `</${name}>`;
+    if (name === "br") return "<br />";
+    if (name === "a") {
+      const match = /href\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(attrs);
+      const href = safeHref(match?.[2] ?? match?.[3] ?? match?.[4] ?? "");
+      return href ? `<a href="${href.replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">` : "<a>";
+    }
+    return `<${name}>`;
+  });
+}
+function extractZoomUrl(html) {
+  if (!html || typeof html !== "string") return null;
+  const match = /https?:\/\/[a-z0-9.-]*zoom\.us\/[^\s"'<>]+/i.exec(html);
+  return match ? match[0].replace(/[.,;)]+$/, "") : null;
+}
+var dedupeKey = (e) => `${e.startDate}|${(e.title ?? "").trim().toLowerCase()}`;
+function mergeCanvasEvents(roadmapEvents, canvasEvents) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const e of roadmapEvents) byKey.set(dedupeKey(e), e);
+  const merged = [...roadmapEvents];
+  for (const canvasEvent of canvasEvents) {
+    const key = dedupeKey(canvasEvent);
+    const existing = byKey.get(key);
+    if (existing) {
+      const enriched = {
+        ...existing,
+        source: "canvas",
+        booked: true,
+        descriptionHtml: canvasEvent.descriptionHtml ?? existing.descriptionHtml ?? null,
+        canvasUrl: canvasEvent.canvasUrl ?? null,
+        // A booking's real time beats the roadmap's placeholder.
+        startTime: canvasEvent.startTime ?? existing.startTime,
+        endTime: canvasEvent.endTime ?? existing.endTime
+      };
+      merged[merged.indexOf(existing)] = enriched;
+      byKey.set(key, enriched);
+      continue;
+    }
+    const fresh = { ...canvasEvent, booked: true };
+    merged.push(fresh);
+    byKey.set(key, fresh);
+  }
+  return merged;
+}
+function monthRange(year, month) {
+  const last = new Date(year, month + 1, 0).getDate();
+  return {
+    startDate: `${year}-${pad(month + 1)}-01`,
+    endDate: `${year}-${pad(month + 1)}-${pad(last)}`
+  };
+}
+
+// src/components/icons.jsx
+import { jsx, jsxs } from "react/jsx-runtime";
+var base = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.75,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": "true"
+};
+function CalendarIcon(props) {
+  return /* @__PURE__ */ jsxs("svg", { ...base, ...props, children: [
+    /* @__PURE__ */ jsx("rect", { x: "3", y: "5", width: "18", height: "16", rx: "2" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 10h18M8 3v4M16 3v4" })
+  ] });
+}
+function CalendarPlusIcon(props) {
+  return /* @__PURE__ */ jsxs("svg", { ...base, ...props, children: [
+    /* @__PURE__ */ jsx("rect", { x: "3", y: "5", width: "18", height: "16", rx: "2" }),
+    /* @__PURE__ */ jsx("path", { d: "M3 10h18M8 3v4M16 3v4" }),
+    /* @__PURE__ */ jsx("path", { d: "M12 13v5M9.5 15.5h5" })
+  ] });
+}
+function ChevronLeftIcon(props) {
+  return /* @__PURE__ */ jsx("svg", { ...base, ...props, children: /* @__PURE__ */ jsx("path", { d: "m15 5-7 7 7 7" }) });
+}
+function ChevronRightIcon(props) {
+  return /* @__PURE__ */ jsx("svg", { ...base, ...props, children: /* @__PURE__ */ jsx("path", { d: "m9 5 7 7-7 7" }) });
+}
+function CheckIcon(props) {
+  return /* @__PURE__ */ jsx("svg", { ...base, ...props, children: /* @__PURE__ */ jsx("path", { d: "m5 13 4 4L19 7" }) });
+}
+function VideoIcon(props) {
+  return /* @__PURE__ */ jsxs("svg", { ...base, ...props, children: [
+    /* @__PURE__ */ jsx("rect", { x: "3", y: "6", width: "12", height: "12", rx: "2" }),
+    /* @__PURE__ */ jsx("path", { d: "m15 11 6-3v8l-6-3Z" })
+  ] });
+}
+function MapPinIcon(props) {
+  return /* @__PURE__ */ jsxs("svg", { ...base, ...props, children: [
+    /* @__PURE__ */ jsx("path", { d: "M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11Z" }),
+    /* @__PURE__ */ jsx("circle", { cx: "12", cy: "10", r: "2.5" })
+  ] });
+}
+
+// src/pages/CalendarPage.jsx
+import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
+var WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+var MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+];
+var pad2 = (n) => String(n).padStart(2, "0");
+var toISO = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+function fromISO(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function eventDateKeys(event) {
+  const start = fromISO(event.startDate);
+  const end = event.endDate ? fromISO(event.endDate) : start;
+  const keys = [];
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) keys.push(toISO(d));
+  return keys;
+}
+function formatTime(hhmm) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  const suffix = h >= 12 ? "pm" : "am";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${pad2(m)}${suffix}`;
+}
+function formatTimeRange(event) {
+  const start = formatTime(event.startTime);
+  if (!start) return "All day";
+  const end = formatTime(event.endTime);
+  return end ? `${start} \u2013 ${end}` : start;
+}
+function formatLongDate(iso) {
+  const d = fromISO(iso);
+  return `${WEEKDAYS[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+function formatDateSpan(event) {
+  if (!event.endDate || event.endDate === event.startDate) return formatLongDate(event.startDate);
+  return `${formatLongDate(event.startDate)} \u2013 ${formatLongDate(event.endDate)}`;
+}
+function monthGrid(year, month) {
+  const first = new Date(year, month, 1);
+  const offset = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = Math.ceil((offset + daysInMonth) / 7) * 7;
+  return Array.from({ length: cells }, (_, i) => {
+    const d = new Date(year, month, 1 - offset + i);
+    return { date: d, iso: toISO(d), inMonth: d.getMonth() === month };
+  });
+}
+var icsEscape = (s = "") => String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+function fold(line) {
+  if (line.length <= 75) return line;
+  const parts = [line.slice(0, 75)];
+  let rest = line.slice(75);
+  while (rest.length > 74) {
+    parts.push(` ${rest.slice(0, 74)}`);
+    rest = rest.slice(74);
+  }
+  if (rest) parts.push(` ${rest}`);
+  return parts.join("\r\n");
+}
+function buildIcs(event) {
+  const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const compact = (iso) => iso.replace(/-/g, "");
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Replenish//REP Dashboard//EN",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${event.id}@rep-dashboard`,
+    `DTSTAMP:${stamp}`
+  ];
+  if (event.startTime) {
+    const endDay = event.endDate ?? event.startDate;
+    lines.push(`DTSTART:${compact(event.startDate)}T${event.startTime.replace(":", "")}00`);
+    if (event.endTime) lines.push(`DTEND:${compact(endDay)}T${event.endTime.replace(":", "")}00`);
+  } else {
+    const lastDay = fromISO(event.endDate ?? event.startDate);
+    lastDay.setDate(lastDay.getDate() + 1);
+    lines.push(`DTSTART;VALUE=DATE:${compact(event.startDate)}`);
+    lines.push(`DTEND;VALUE=DATE:${compact(toISO(lastDay))}`);
+  }
+  const details = [event.description, event.group ? `Group: ${event.group}` : null].filter(Boolean).join(" ");
+  lines.push(fold(`SUMMARY:${icsEscape(event.title)}`));
+  lines.push(fold(`DESCRIPTION:${icsEscape(details)}`));
+  lines.push(fold(`LOCATION:${icsEscape(event.location === "online" ? "Online" : "In person")}`));
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function downloadIcs(event) {
+  const blob = new Blob([buildIcs(event)], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${event.id}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function TypeChip({ type, active, onToggle }) {
+  const meta = EVENT_TYPE_META[type];
+  return /* @__PURE__ */ jsx2(
+    "button",
+    {
+      type: "button",
+      onClick: onToggle,
+      "aria-pressed": active,
+      className: `rounded-full border px-3 py-1 font-body text-xs font-semibold transition-colors ${active ? meta.chipOn : meta.chipOff}`,
+      children: meta.label
+    }
+  );
+}
+function EventDetail({ event }) {
+  const meta = EVENT_TYPE_META[event.type];
+  const zoomUrl = extractZoomUrl(event.descriptionHtml);
+  const descriptionHtml = useMemo(
+    () => sanitizeDescriptionHtml(event.descriptionHtml),
+    [event.descriptionHtml]
+  );
+  return /* @__PURE__ */ jsxs2("li", { className: `rounded-xl border border-l-4 border-gray-100 bg-white p-4 ${meta.accent}`, children: [
+    /* @__PURE__ */ jsxs2("div", { className: "flex flex-wrap items-center gap-2", children: [
+      /* @__PURE__ */ jsx2("span", { className: `rounded-full px-2 py-0.5 font-body text-[10px] font-bold ${meta.pill}`, children: meta.short }),
+      event.cohort !== "all" && /* @__PURE__ */ jsx2("span", { className: "rounded-full bg-gray-100 px-2 py-0.5 font-body text-[10px] font-semibold text-gray-600", children: event.cohort === "cohort1" ? "Cohort 1" : "Cohort 2" }),
+      event.capacity && /* @__PURE__ */ jsxs2("span", { className: "rounded-full bg-gray-100 px-2 py-0.5 font-body text-[10px] font-semibold text-gray-600", children: [
+        event.capacity,
+        " places"
+      ] }),
+      event.booked && /* @__PURE__ */ jsxs2("span", { className: "inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-body text-[10px] font-bold text-green-700", children: [
+        /* @__PURE__ */ jsx2(CheckIcon, { className: "h-3 w-3" }),
+        "Booked"
+      ] })
+    ] }),
+    /* @__PURE__ */ jsx2("h3", { className: "mt-2 font-heading text-sm font-bold text-rep-navy", children: event.title }),
+    /* @__PURE__ */ jsxs2("div", { className: "mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-body text-xs text-gray-500", children: [
+      /* @__PURE__ */ jsx2("span", { children: formatDateSpan(event) }),
+      /* @__PURE__ */ jsx2("span", { children: formatTimeRange(event) }),
+      /* @__PURE__ */ jsxs2("span", { className: "inline-flex items-center gap-1", children: [
+        event.location === "online" ? /* @__PURE__ */ jsx2(VideoIcon, { className: "h-3.5 w-3.5" }) : /* @__PURE__ */ jsx2(MapPinIcon, { className: "h-3.5 w-3.5" }),
+        event.location === "online" ? "Online" : "In person"
+      ] })
+    ] }),
+    event.description && /* @__PURE__ */ jsx2("p", { className: "mt-2 font-body text-xs leading-relaxed text-gray-600", children: event.description }),
+    descriptionHtml && // Sanitised in canvasEvents.js: tags are allowlisted and every
+    // attribute except a safe href is stripped, so the Zoom link stays
+    // clickable without the description being an injection point.
+    /* @__PURE__ */ jsx2(
+      "div",
+      {
+        className: "mt-2 font-body text-xs leading-relaxed text-gray-600 [&_a]:font-semibold [&_a]:text-rep-orange [&_a]:underline",
+        dangerouslySetInnerHTML: { __html: descriptionHtml }
+      }
+    ),
+    zoomUrl && /* @__PURE__ */ jsxs2(
+      "a",
+      {
+        href: zoomUrl,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        className: "mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-rep-navy px-3 py-2 font-body text-xs font-semibold text-white transition-opacity hover:opacity-90",
+        children: [
+          /* @__PURE__ */ jsx2(VideoIcon, { className: "h-3.5 w-3.5" }),
+          "Join via Zoom"
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxs2(
+      "button",
+      {
+        type: "button",
+        onClick: () => downloadIcs(event),
+        className: "mt-3 inline-flex items-center gap-1.5 rounded-lg border border-rep-orange/30 px-3 py-1.5 font-body text-xs font-semibold text-rep-orange transition-colors hover:bg-rep-orange hover:text-white",
+        children: [
+          /* @__PURE__ */ jsx2(CalendarPlusIcon, { className: "h-3.5 w-3.5" }),
+          "Add to calendar"
+        ]
+      }
+    )
+  ] });
+}
+function CalendarPage() {
+  const today = useMemo(() => /* @__PURE__ */ new Date(), []);
+  const todayIso = toISO(today);
+  const [cursor, setCursor] = useState(() => ({
+    year: today.getFullYear(),
+    month: today.getMonth()
+  }));
+  const [selected, setSelected] = useState(todayIso);
+  const [hidden, setHidden] = useState(() => /* @__PURE__ */ new Set());
+  const [canvasEvents, setCanvasEvents] = useState(() => /* @__PURE__ */ new Map());
+  useEffect(() => {
+    const controller = new AbortController();
+    const { startDate, endDate } = monthRange(cursor.year, cursor.month);
+    fetch(`/api/calendar?start_date=${startDate}&end_date=${endDate}`, {
+      credentials: "include",
+      signal: controller.signal
+    }).then((res) => {
+      if (res.status === 401) return [];
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }).then((rows) => {
+      const mapped = (Array.isArray(rows) ? rows : []).map(mapCanvasEvent).filter(Boolean);
+      if (mapped.length === 0) return;
+      setCanvasEvents((current) => {
+        const next = new Map(current);
+        for (const e of mapped) next.set(e.id, e);
+        return next;
+      });
+    }).catch((err) => {
+      if (err.name !== "AbortError") console.warn(`[calendar] Canvas events unavailable: ${err.message}`);
+    });
+    return () => controller.abort();
+  }, [cursor]);
+  const allEvents = useMemo(
+    () => mergeCanvasEvents(ROADMAP_EVENTS, [...canvasEvents.values()]),
+    [canvasEvents]
+  );
+  const visibleEvents = useMemo(
+    () => allEvents.filter((e) => !hidden.has(e.type)),
+    [allEvents, hidden]
+  );
+  const eventsByDate = useMemo(() => {
+    const map = /* @__PURE__ */ new Map();
+    for (const event of visibleEvents) {
+      for (const key of eventDateKeys(event)) {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(event);
+      }
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""));
+    }
+    return map;
+  }, [visibleEvents]);
+  const cells = useMemo(() => monthGrid(cursor.year, cursor.month), [cursor]);
+  const selectedEvents = selected ? eventsByDate.get(selected) ?? [] : [];
+  const nextEvent = useMemo(() => {
+    const upcoming = visibleEvents.filter((e) => (e.endDate ?? e.startDate) >= todayIso).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    return upcoming[0] ?? null;
+  }, [visibleEvents, todayIso]);
+  const monthHasEvents = cells.some((c) => c.inMonth && eventsByDate.has(c.iso));
+  const bookedCount = visibleEvents.filter((e) => e.booked).length;
+  const step = (delta) => setCursor(({ year, month }) => {
+    const d = new Date(year, month + delta, 1);
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const jumpTo = (iso) => {
+    const d = fromISO(iso);
+    setCursor({ year: d.getFullYear(), month: d.getMonth() });
+    setSelected(iso);
+  };
+  const toggleType = (type) => setHidden((current) => {
+    const next = new Set(current);
+    if (next.has(type)) next.delete(type);
+    else next.add(type);
+    return next;
+  });
+  return /* @__PURE__ */ jsxs2("div", { className: "mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8", children: [
+    /* @__PURE__ */ jsxs2("div", { className: "flex flex-wrap items-baseline justify-between gap-3", children: [
+      /* @__PURE__ */ jsx2("h1", { className: "font-heading text-2xl font-bold text-rep-navy sm:text-3xl", children: "Calendar" }),
+      /* @__PURE__ */ jsxs2("span", { className: "font-body text-sm text-gray-500", children: [
+        visibleEvents.length,
+        " ",
+        visibleEvents.length === 1 ? "event" : "events",
+        bookedCount > 0 ? ` \xB7 ${bookedCount} booked` : ""
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxs2("div", { className: "mt-4 flex flex-wrap items-center gap-2", children: [
+      /* @__PURE__ */ jsx2(
+        "button",
+        {
+          type: "button",
+          onClick: () => setHidden(/* @__PURE__ */ new Set()),
+          "aria-pressed": hidden.size === 0,
+          className: `rounded-full border px-3 py-1 font-body text-xs font-semibold transition-colors ${hidden.size === 0 ? "border-rep-navy bg-rep-navy text-white" : "border-gray-300 bg-white text-gray-600 hover:border-rep-navy"}`,
+          children: "All"
+        }
+      ),
+      EVENT_TYPE_ORDER.map((type) => /* @__PURE__ */ jsx2(
+        TypeChip,
+        {
+          type,
+          active: !hidden.has(type),
+          onToggle: () => toggleType(type)
+        },
+        type
+      ))
+    ] }),
+    /* @__PURE__ */ jsxs2("div", { className: "mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]", children: [
+      /* @__PURE__ */ jsxs2("div", { className: "rounded-2xl bg-white p-4 shadow-md sm:p-5", children: [
+        /* @__PURE__ */ jsxs2("div", { className: "flex items-center justify-between gap-3", children: [
+          /* @__PURE__ */ jsxs2("h2", { className: "font-heading text-lg font-semibold text-rep-navy", children: [
+            MONTHS[cursor.month],
+            " ",
+            cursor.year
+          ] }),
+          /* @__PURE__ */ jsxs2("div", { className: "flex items-center gap-1", children: [
+            /* @__PURE__ */ jsx2(
+              "button",
+              {
+                type: "button",
+                onClick: () => step(-1),
+                "aria-label": "Previous month",
+                className: "rounded-md p-1.5 text-rep-navy transition-colors hover:bg-black/5",
+                children: /* @__PURE__ */ jsx2(ChevronLeftIcon, { className: "h-4 w-4" })
+              }
+            ),
+            /* @__PURE__ */ jsx2(
+              "button",
+              {
+                type: "button",
+                onClick: () => jumpTo(todayIso),
+                className: "rounded-md px-2.5 py-1 font-body text-xs font-semibold text-rep-orange transition-colors hover:bg-rep-orange/10",
+                children: "Today"
+              }
+            ),
+            /* @__PURE__ */ jsx2(
+              "button",
+              {
+                type: "button",
+                onClick: () => step(1),
+                "aria-label": "Next month",
+                className: "rounded-md p-1.5 text-rep-navy transition-colors hover:bg-black/5",
+                children: /* @__PURE__ */ jsx2(ChevronRightIcon, { className: "h-4 w-4" })
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs2("div", { className: "mt-4 grid grid-cols-7 gap-px", children: [
+          WEEKDAYS.map((d) => /* @__PURE__ */ jsx2(
+            "div",
+            {
+              className: "pb-1.5 text-center font-body text-[10px] font-semibold uppercase tracking-wide text-gray-400",
+              children: d
+            },
+            d
+          )),
+          cells.map(({ iso, date, inMonth }) => {
+            const dayEvents = eventsByDate.get(iso) ?? [];
+            const isToday = iso === todayIso;
+            const isSelected = iso === selected;
+            return /* @__PURE__ */ jsxs2(
+              "button",
+              {
+                type: "button",
+                onClick: () => setSelected(iso),
+                "aria-label": `${formatLongDate(iso)}, ${dayEvents.length} events`,
+                "aria-pressed": isSelected,
+                className: `min-h-[4.25rem] rounded-lg border p-1 text-left align-top transition-colors sm:min-h-[5.5rem] ${isSelected ? "border-rep-orange bg-rep-orange/5" : "border-gray-100 hover:border-rep-orange/40"} ${inMonth ? "" : "opacity-40"}`,
+                children: [
+                  /* @__PURE__ */ jsx2(
+                    "span",
+                    {
+                      className: `inline-flex h-6 w-6 items-center justify-center rounded-full font-body text-xs ${isToday ? "bg-rep-orange font-bold text-white" : "text-rep-navy"}`,
+                      children: date.getDate()
+                    }
+                  ),
+                  /* @__PURE__ */ jsxs2("span", { className: "mt-1 hidden flex-col gap-0.5 sm:flex", children: [
+                    dayEvents.slice(0, 2).map((e) => /* @__PURE__ */ jsxs2(
+                      "span",
+                      {
+                        className: `flex items-center gap-0.5 truncate rounded px-1 py-0.5 font-body text-[9px] font-semibold leading-tight ${EVENT_TYPE_META[e.type].pill}`,
+                        children: [
+                          e.booked && /* @__PURE__ */ jsx2(CheckIcon, { className: "h-2 w-2 shrink-0" }),
+                          /* @__PURE__ */ jsx2("span", { className: "truncate", children: e.title })
+                        ]
+                      },
+                      e.id
+                    )),
+                    dayEvents.length > 2 && /* @__PURE__ */ jsxs2("span", { className: "px-1 font-body text-[9px] font-semibold text-gray-400", children: [
+                      "+",
+                      dayEvents.length - 2,
+                      " more"
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsx2("span", { className: "mt-1 flex flex-wrap gap-0.5 sm:hidden", children: dayEvents.slice(0, 4).map((e) => /* @__PURE__ */ jsx2(
+                    "span",
+                    {
+                      className: `h-1.5 w-1.5 rounded-full ${EVENT_TYPE_META[e.type].dot}`
+                    },
+                    e.id
+                  )) })
+                ]
+              },
+              iso
+            );
+          })
+        ] }),
+        !monthHasEvents && nextEvent && /* @__PURE__ */ jsxs2("p", { className: "mt-4 border-t border-gray-100 pt-3 font-body text-xs text-gray-500", children: [
+          "Nothing scheduled this month.",
+          " ",
+          /* @__PURE__ */ jsxs2(
+            "button",
+            {
+              type: "button",
+              onClick: () => jumpTo(nextEvent.startDate),
+              className: "font-semibold text-rep-orange hover:underline",
+              children: [
+                "Jump to ",
+                nextEvent.title,
+                " on ",
+                formatLongDate(nextEvent.startDate),
+                " \u2192"
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxs2("div", { className: "mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3", children: [
+          EVENT_TYPE_ORDER.map((type) => /* @__PURE__ */ jsxs2("span", { className: "inline-flex items-center gap-1.5", children: [
+            /* @__PURE__ */ jsx2("span", { className: `h-2.5 w-2.5 rounded-full ${EVENT_TYPE_META[type].dot}` }),
+            /* @__PURE__ */ jsx2("span", { className: "font-body text-[11px] text-gray-600", children: EVENT_TYPE_META[type].label })
+          ] }, type)),
+          bookedCount > 0 && /* @__PURE__ */ jsxs2("span", { className: "inline-flex items-center gap-1.5", children: [
+            /* @__PURE__ */ jsx2(CheckIcon, { className: "h-3 w-3 text-green-600" }),
+            /* @__PURE__ */ jsx2("span", { className: "font-body text-[11px] text-gray-600", children: "Your booking" })
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxs2("aside", { className: "rounded-2xl bg-white p-4 shadow-md sm:p-5", children: [
+        /* @__PURE__ */ jsx2("h2", { className: "font-heading text-sm font-bold text-rep-navy", children: selected ? formatLongDate(selected) : "Select a date" }),
+        /* @__PURE__ */ jsx2("p", { className: "mt-0.5 font-body text-xs text-gray-500", children: selectedEvents.length === 0 ? "No sessions on this day" : `${selectedEvents.length} ${selectedEvents.length === 1 ? "session" : "sessions"}` }),
+        selectedEvents.length === 0 ? /* @__PURE__ */ jsxs2("div", { className: "mt-6 flex flex-col items-center gap-2 text-center", children: [
+          /* @__PURE__ */ jsx2(CalendarIcon, { className: "h-8 w-8 text-gray-300" }),
+          /* @__PURE__ */ jsx2("p", { className: "font-body text-xs text-gray-500", children: "Pick a highlighted date to see what's on." })
+        ] }) : /* @__PURE__ */ jsx2("ul", { className: "mt-3 space-y-2", children: selectedEvents.map((event) => /* @__PURE__ */ jsx2(EventDetail, { event }, event.id)) })
+      ] })
+    ] })
+  ] });
+}
+export {
+  buildIcs,
+  CalendarPage as default,
+  eventDateKeys,
+  formatTimeRange,
+  fromISO,
+  monthGrid
+};
