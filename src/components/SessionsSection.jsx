@@ -2,20 +2,23 @@
 //   `to`    — schedule is already published; links into the calendar.
 //   `books` — booked externally on Calendly; opens BookingModal in that mode.
 //   neither — nothing to do yet; stays disabled with a "Coming soon" hint.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BookingModal from './BookingModal.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import { CalendarPlusIcon, MapPinIcon, PeopleIcon, PersonIcon, VideoIcon } from './icons.jsx'
 
-// Placeholder counts — no booking data source exists until Milestone 2.
-// Totals track the program roadmap, not Canvas: nothing here is fetched.
+// `total` is the program allowance from the roadmap and never changes.
+// `booked` comes from /api/bookings/summary; these values are the fallback used
+// while it loads, and when there is no LTI session to count bookings for.
 const SESSIONS = [
   {
     key: 'mhfa',
     // One booking covers the 2-day certification.
     title: 'Mental Health First Aid Sessions',
-    count: '0 of 1 booked',
+    summaryKey: 'mhfa',
+    total: 1,
+    unit: 'booked',
     cta: 'Book your sessions',
     books: 'mhfa',
     Icon: CalendarPlusIcon,
@@ -23,7 +26,9 @@ const SESSIONS = [
   {
     key: 'coaching',
     title: 'One-on-One Coaching Sessions',
-    count: '0 of 2 booked',
+    summaryKey: 'coaching_1on1',
+    total: 2,
+    unit: 'booked',
     cta: 'Book your sessions',
     books: 'coaching',
     Icon: PersonIcon,
@@ -31,7 +36,9 @@ const SESSIONS = [
   {
     key: 'workshops',
     title: 'Group Coaching Sessions',
-    count: '0 of 3 included',
+    summaryKey: 'group_coaching',
+    total: 3,
+    unit: 'included',
     cta: 'See schedule',
     to: '/calendar',
     Icon: PeopleIcon,
@@ -39,7 +46,9 @@ const SESSIONS = [
   {
     key: 'webinars',
     title: 'Webinars',
-    count: '0 of 4 attended',
+    summaryKey: 'webinars',
+    total: 4,
+    unit: 'attended',
     cta: 'View schedule',
     to: '/calendar',
     Icon: VideoIcon,
@@ -47,15 +56,21 @@ const SESSIONS = [
   {
     key: 'f2f',
     title: 'Face-to-Face Workshops',
-    count: '0 of 2 attended',
+    summaryKey: 'f2f',
+    total: 2,
+    unit: 'attended',
     cta: 'View schedule',
     to: '/calendar',
     Icon: MapPinIcon,
   },
 ]
 
-function SessionCard({ session, onBook }) {
-  const { title, count, cta, to, books, Icon } = session
+function SessionCard({ session, summary, loading, onBook }) {
+  const { title, summaryKey, total, unit, cta, to, books, Icon } = session
+
+  // Live count when we have it; the roadmap total is authoritative either way.
+  const booked = summary?.[summaryKey]?.booked ?? 0
+  const shownTotal = summary?.[summaryKey]?.total ?? total
 
   return (
     <div className="flex flex-col rounded-2xl bg-white p-5 shadow-md">
@@ -64,7 +79,18 @@ function SessionCard({ session, onBook }) {
       </div>
 
       <h3 className="mt-3 font-heading text-sm font-bold leading-snug text-rep-navy">{title}</h3>
-      <p className="mt-1 font-body text-xs text-gray-500">{count}</p>
+
+      {/* A skeleton while counting, so the card never shows 0 and then jumps. */}
+      {loading ? (
+        <span
+          className="mt-1.5 block h-3 w-24 animate-pulse rounded bg-gray-100"
+          aria-label={`Counting ${title}`}
+        />
+      ) : (
+        <p className="mt-1 font-body text-xs text-gray-500">
+          {booked} of {shownTotal} {unit}
+        </p>
+      )}
 
       {to ? (
         <Link
@@ -109,6 +135,35 @@ export default function SessionsSection() {
   // context — same source as the "Welcome, <name>" heading.
   const { user } = useProfile()
 
+  // Booked counts from the teacher's Canvas Calendar. null = not loaded, in
+  // which case the cards fall back to the roadmap totals with zero booked.
+  const [summary, setSummary] = useState(null)
+  const [counting, setCounting] = useState(true)
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    fetch('/api/bookings/summary', { credentials: 'include', signal: controller.signal })
+      .then((res) => {
+        // 401 = standalone mode, no session to count bookings against.
+        if (res.status === 401) return null
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (data) setSummary(data)
+        setCounting(false)
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        // The cards still render their roadmap totals, so this is not fatal.
+        console.warn(`[sessions] booking counts unavailable: ${err.message}`)
+        setCounting(false)
+      })
+
+    return () => controller.abort()
+  }, [])
+
   return (
     <section>
       <h2 className="mb-3 font-heading text-lg font-semibold text-rep-navy">
@@ -117,7 +172,13 @@ export default function SessionsSection() {
       {/* Five cards: 1 col on mobile, 2 on tablet, 3 on desktop (3 + 2 rows). */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {SESSIONS.map((s) => (
-          <SessionCard key={s.key} session={s} onBook={setBooking} />
+          <SessionCard
+            key={s.key}
+            session={s}
+            summary={summary}
+            loading={counting}
+            onBook={setBooking}
+          />
         ))}
       </div>
 

@@ -316,6 +316,79 @@ router.get(
   })
 )
 
+/* ---- booking summary ----
+ *
+ * How many of each session type this teacher has actually booked, counted from
+ * their Canvas Calendar. The totals are the program's allowance per teacher and
+ * are fixed by the roadmap, so only the booked side is live.
+ */
+
+/** Program allowance per teacher. Mirrors the session cards. */
+const BOOKING_TOTALS = {
+  coaching_1on1: 2,
+  mhfa: 1,
+  group_coaching: 3,
+  webinars: 4,
+  f2f: 2,
+}
+
+/**
+ * Title -> session type, most specific pattern first.
+ *
+ * Order carries the logic: "Group Coaching" also contains "Coaching", and
+ * "MHFA Workshop" also contains "Workshop", so a flat set of rules would put
+ * those events in two buckets at once. Each event is counted exactly once.
+ */
+const BOOKING_PATTERNS = [
+  ['group_coaching', /group\s*coaching/i],
+  ['mhfa', /\bmhfa\b|mental\s*health/i],
+  ['coaching_1on1', /\bcoach|1:1|1-1\b/i],
+  ['webinars', /webinar/i],
+  ['f2f', /\bf2f\b|face[-\s]?to[-\s]?face|workshop/i],
+]
+
+export function classifyBooking(title = '') {
+  for (const [type, pattern] of BOOKING_PATTERNS) {
+    if (pattern.test(title)) return type
+  }
+  return null
+}
+
+/**
+ * GET /api/bookings/summary — booked vs allowed, per session type.
+ *
+ * Read-only. Counts only 'active' events, so a cancelled Calendly booking that
+ * n8n deleted in Canvas stops being counted.
+ */
+router.get(
+  '/bookings/summary',
+  asyncHandler(async (req, res) => {
+    const { data } = await cachedGet('/calendar_events', {
+      params: {
+        type: 'event',
+        all_events: 1,
+        per_page: 100,
+        // The token is an admin one, so reading a teacher's personal calendar
+        // means masquerading as them rather than reading our own.
+        as_user_id: req.canvasUserId,
+      },
+    })
+
+    const events = Array.isArray(data) ? data : []
+    const summary = Object.fromEntries(
+      Object.entries(BOOKING_TOTALS).map(([type, total]) => [type, { booked: 0, total }])
+    )
+
+    for (const event of events) {
+      if (event.workflow_state && event.workflow_state !== 'active') continue
+      const type = classifyBooking(event.title ?? '')
+      if (type && summary[type]) summary[type].booked += 1
+    }
+
+    res.json(summary)
+  })
+)
+
 /**
  * GET /api/calendar — Canvas calendar events for the current user.
  *
