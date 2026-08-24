@@ -6,7 +6,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BookingModal from './BookingModal.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
-import { CalendarPlusIcon, MapPinIcon, PeopleIcon, PersonIcon, VideoIcon } from './icons.jsx'
+import {
+  CalendarPlusIcon,
+  CheckIcon,
+  MapPinIcon,
+  PeopleIcon,
+  PersonIcon,
+  VideoIcon,
+} from './icons.jsx'
 
 // `total` is the program allowance from the roadmap and never changes.
 // `booked` comes from /api/bookings/summary; these values are the fallback used
@@ -72,6 +79,12 @@ function SessionCard({ session, summary, loading, onBook }) {
   const booked = summary?.[summaryKey]?.booked ?? 0
   const shownTotal = summary?.[summaryKey]?.total ?? total
 
+  // Soft limit: only the externally-booked cards (1:1 and MHFA) have an
+  // allowance to use up. The schedule cards link to the calendar instead and
+  // have nothing to disable. Left enabled while counting, so the common case —
+  // a teacher with sessions left — never flickers into a disabled state.
+  const atLimit = Boolean(books) && !loading && booked >= shownTotal
+
   return (
     <div className="flex flex-col rounded-2xl bg-white p-5 shadow-md">
       <div className="flex h-11 w-11 items-center justify-center rounded-full bg-rep-orange/15 text-rep-orange">
@@ -100,13 +113,25 @@ function SessionCard({ session, summary, loading, onBook }) {
           {cta}
         </Link>
       ) : books ? (
-        <button
-          type="button"
-          onClick={() => onBook(books)}
-          className="mt-4 w-full rounded-lg bg-rep-orange px-4 py-2 font-body text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          {cta}
-        </button>
+        atLimit ? (
+          <button
+            type="button"
+            disabled
+            title={`You have booked all ${shownTotal} of your sessions`}
+            className="mt-4 flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-lg bg-green-50 px-4 py-2 font-body text-sm font-semibold text-green-700"
+          >
+            <CheckIcon className="h-4 w-4" />
+            All sessions booked
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onBook(books)}
+            className="mt-4 w-full rounded-lg bg-rep-orange px-4 py-2 font-body text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            {cta}
+          </button>
+        )
       ) : (
         <div className="group relative mt-4">
           <button
