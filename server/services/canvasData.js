@@ -117,25 +117,92 @@ async function perEnrolledCourse(userId, fn) {
   return results.flat()
 }
 
+/** The curated Resource Hub folder, or null to fall back to all course files. */
+const resourceFolderId = () => process.env.CANVAS_RESOURCE_FOLDER_ID?.trim() || null
+
 /**
- * GET /api/files/:userId — files across the courses the user can access.
+ * One Canvas file -> the shape the Resource Hub renders.
+ *
+ * `size` stays a formatted string because FileCard prints it directly; the raw
+ * byte count is kept alongside as sizeBytes for anything that needs to sort.
  */
-export async function getFiles(userId) {
+function shapeFile(f, course) {
+  return {
+    id: f.id,
+    filename: f.display_name ?? f.filename,
+    displayName: f.display_name ?? null,
+    url: f.url ?? null,
+    size: formatFileSize(f.size),
+    sizeBytes: typeof f.size === 'number' ? f.size : null,
+    contentType: f['content-type'] ?? f.content_type ?? null,
+    createdAt: f.created_at ?? null,
+    updatedAt: f.updated_at ?? null,
+    thumbnailUrl: f.thumbnail_url ?? null,
+    courseId: course?.courseId ?? null,
+    courseName: course?.courseName ?? null,
+  }
+}
+
+/**
+ * The course a folder belongs to, so cards keep their subtitle.
+ *
+ * A folder knows its context ("course"/456); matching that against the
+ * configured courses gives a display name without hardcoding one here.
+ */
+async function folderCourse(folderId) {
+  try {
+    const { data } = await cachedGet(`/folders/${encodeURIComponent(folderId)}`)
+    if (data?.context_type !== 'Course') return null
+
+    const match = Object.values(CANVAS_CONFIG.courses).find(
+      (c) => String(c.id) === String(data.context_id)
+    )
+    return match ? { courseId: match.id, courseName: match.name } : null
+  } catch {
+    // The label is cosmetic — a failure here must not cost us the file list.
+    return null
+  }
+}
+
+/**
+ * Files in the curated Resource Hub folder.
+ *
+ * Read with the admin token, so the folder's own permissions decide what the
+ * client publishes rather than per-teacher enrolment.
+ */
+async function getFolderFiles(folderId) {
+  const [course, { data }] = await Promise.all([
+    folderCourse(folderId),
+    cachedGet(`/folders/${encodeURIComponent(folderId)}/files`, { params: { per_page: 50 } }),
+  ])
+
+  return (Array.isArray(data) ? data : []).map((f) => shapeFile(f, course))
+}
+
+/** Files across every course the user can actually see — the pre-folder behaviour. */
+async function getAllCourseFiles(userId) {
   return perEnrolledCourse(userId, async (course) => {
     const { data } = await cachedGet(`/courses/${course.courseId}/files`, {
       params: { per_page: 100 },
     })
 
-    return (Array.isArray(data) ? data : []).map((f) => ({
-      id: f.id,
-      filename: f.display_name ?? f.filename,
-      url: f.url ?? null,
-      size: formatFileSize(f.size),
-      contentType: f['content-type'] ?? null,
-      courseId: course.courseId,
-      courseName: course.courseName,
-    }))
+    return (Array.isArray(data) ? data : []).map((f) => shapeFile(f, course))
   })
+}
+
+/**
+ * GET /api/files/:userId — the Resource Hub file list.
+ *
+ * With CANVAS_RESOURCE_FOLDER_ID set, this is only what the client has placed
+ * in that folder. Without it, every file across the user's enrolled courses,
+ * exactly as before.
+ *
+ * Shared with the socket poller, so both paths must come through here — a route
+ * that filtered while the poll did not would flip the list every 30 seconds.
+ */
+export async function getFiles(userId) {
+  const folderId = resourceFolderId()
+  return folderId ? getFolderFiles(folderId) : getAllCourseFiles(userId)
 }
 
 /**
