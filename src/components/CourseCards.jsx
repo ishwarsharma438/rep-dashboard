@@ -60,17 +60,18 @@ function SkeletonRow() {
 }
 
 /**
- * The course's Pages list.
+ * The course's Front Page — the welcome page with its quick-access links.
  *
- * The API hands back the course home URL, and the dashboard now sits at the top
- * of that page's navigation — so "Continue" goes straight to the course content
- * rather than bouncing a teacher through the home page. Derived here rather
- * than in canvasData.js so the API keeps returning the canonical course URL.
+ * /wiki lands on the Front Page itself rather than the pages index. The API
+ * hands back the course home URL, and the dashboard now sits at the top of that
+ * page's navigation, so "Continue" skips it and goes straight to the content.
+ * Derived here rather than in canvasData.js so the API keeps returning the
+ * canonical course URL.
  */
 export function coursePagesUrl(canvasUrl) {
   if (!canvasUrl) return null
   const base = canvasUrl.replace(/\/+$/, '')
-  return `${base}/pages`
+  return `${base}/wiki`
 }
 
 function CourseRow({ course }) {
