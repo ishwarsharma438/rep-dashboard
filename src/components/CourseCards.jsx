@@ -60,17 +60,17 @@ function SkeletonRow() {
 }
 
 /**
- * The course's Modules page.
+ * The course's Pages list.
  *
  * The API hands back the course home URL, and the dashboard now sits at the top
- * of that page's navigation — so "Continue" goes straight to the module list
+ * of that page's navigation — so "Continue" goes straight to the course content
  * rather than bouncing a teacher through the home page. Derived here rather
  * than in canvasData.js so the API keeps returning the canonical course URL.
  */
-export function modulesUrl(canvasUrl) {
+export function coursePagesUrl(canvasUrl) {
   if (!canvasUrl) return null
   const base = canvasUrl.replace(/\/+$/, '')
-  return base.endsWith('/modules') ? base : `${base}/modules`
+  return `${base}/pages`
 }
 
 function CourseRow({ course }) {
@@ -123,7 +123,7 @@ function CourseRow({ course }) {
           </button>
         ) : (
           <a
-            href={modulesUrl(canvasUrl)}
+            href={coursePagesUrl(canvasUrl)}
             target="_blank"
             rel="noopener noreferrer"
             className="block w-full rounded-lg border border-rep-orange px-4 py-2 text-center font-body text-sm font-semibold text-rep-orange transition-colors hover:bg-rep-orange hover:text-white sm:w-auto"
