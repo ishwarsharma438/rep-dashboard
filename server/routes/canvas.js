@@ -2,7 +2,7 @@ import { Router } from 'express'
 import {
   createDiscussion,
   createDiscussionEntry,
-  getAnnouncements,
+  getGroupedAnnouncements,
   getCourses,
   getDiscussions,
   getFiles,
@@ -430,13 +430,14 @@ router.get(
 )
 
 /**
- * GET /api/announcements
+ * GET /api/announcements — grouped: the programme feed plus one section per
+ * course. See getGroupedAnnouncements() for the shape.
  */
 router.get(
   '/announcements',
   asyncHandler(async (req, res) => {
     res.json(
-      await getAnnouncements({
+      await getGroupedAnnouncements({
         startDate: req.query.start_date,
         endDate: req.query.end_date,
       })

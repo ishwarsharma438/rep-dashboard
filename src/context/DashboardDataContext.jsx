@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { USER_ID } from './ProfileContext.jsx'
 import useSocket from '../hooks/useSocket.js'
+import {
+  EMPTY_GROUPS,
+  addToGroups,
+  flattenGroups,
+  normalizeGroups,
+} from '../lib/announcements.js'
 
 /**
  * The single source of dashboard data (courses, announcements, files,
@@ -15,6 +21,7 @@ const EMPTY_FLAGS = { courses: true, announcements: true, files: true, discussio
 const DashboardDataContext = createContext({
   courses: [],
   announcements: [],
+  announcementGroups: EMPTY_GROUPS,
   files: [],
   discussions: [],
   loading: EMPTY_FLAGS,
@@ -35,7 +42,11 @@ const asArray = (result) =>
 
 export function DashboardDataProvider({ children }) {
   const [courses, setCourses] = useState([])
+  // Two views of one fetch: `announcements` is the flat newest-first list the
+  // dashboard preview and EngagementStats read; `announcementGroups` is the
+  // programme feed plus per-course sections the /announcements page renders.
   const [announcements, setAnnouncements] = useState([])
+  const [announcementGroups, setAnnouncementGroups] = useState(EMPTY_GROUPS)
   const [files, setFiles] = useState([])
   const [discussions, setDiscussions] = useState([])
   const [loading, setLoading] = useState(EMPTY_FLAGS)
@@ -55,8 +66,12 @@ export function DashboardDataProvider({ children }) {
       json(`/api/discussions/${USER_ID}`),
     ]).then(([c, a, f, d]) => {
       if (cancelled) return
+
+      const groups = normalizeGroups(a.status === 'fulfilled' ? a.value : null)
+
       setCourses(asArray(c))
-      setAnnouncements(asArray(a))
+      setAnnouncementGroups(groups)
+      setAnnouncements(flattenGroups(groups))
       setFiles(asArray(f))
       setDiscussions(asArray(d))
       setLoading({ courses: false, announcements: false, files: false, discussions: false })
@@ -97,6 +112,10 @@ export function DashboardDataProvider({ children }) {
       setNewAnnouncementIds((ids) => new Set([...ids, ...fresh.map((a) => a.id)]))
       return [...fresh, ...current]
     })
+
+    // The poller emits a flat array; fold it into the sections too, or a live
+    // arrival would reach the dashboard preview but not the page.
+    setAnnouncementGroups((groups) => addToGroups(groups, incoming))
     settle('announcements')
   }, [])
 
@@ -154,6 +173,7 @@ export function DashboardDataProvider({ children }) {
       value={{
         courses,
         announcements,
+        announcementGroups,
         files,
         discussions,
         loading,

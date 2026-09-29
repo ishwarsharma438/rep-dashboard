@@ -318,33 +318,180 @@ export async function getGroups(userId) {
   }
 }
 
+/* ---------- announcements ---------- */
+
 /**
- * Announcements across all four REP courses.
+ * The "Welcome to REP" course, whose announcements go to every teacher
+ * regardless of enrolment — or null while that course doesn't exist yet.
  *
- * Canvas defaults this endpoint to the last 14 days only, which silently hides
- * older posts. Look back a year by default; the route can override.
+ * Read per call rather than at module load so the feature activates by setting
+ * the variable and restarting, with no code change.
  */
-export async function getAnnouncements({ startDate, endDate } = {}) {
-  const contextCodes = Object.values(CANVAS_CONFIG.courses).map((c) => `course_${c.id}`)
+const welcomeCourseId = () => process.env.WELCOME_COURSE_ID?.trim() || null
 
-  // Day granularity keeps the cache key stable across polls within a day.
+export const PROGRAMME_SOURCE = 'programme'
+export const COURSE_SOURCE = 'course'
+
+// Shown where a programme announcement needs a label. The Welcome course's real
+// Canvas name isn't known until it exists, and fetching it would cost a request
+// per poll for a string the page already has a heading for.
+const PROGRAMME_LABEL = 'Programme'
+
+/** Configured name for a Canvas course id, or null if it isn't one of ours. */
+function courseNameFor(courseId) {
+  const match = Object.values(CANVAS_CONFIG.courses).find(
+    (c) => String(c.id) === String(courseId)
+  )
+  return match ? match.name : null
+}
+
+/** 'course_456' -> 456. Anything else -> null. */
+function courseIdFromContext(contextCode) {
+  if (typeof contextCode !== 'string' || !contextCode.startsWith('course_')) return null
+  const id = Number(contextCode.slice('course_'.length))
+  return Number.isFinite(id) ? id : null
+}
+
+const newestFirst = (a, b) => new Date(b.postedAt ?? 0) - new Date(a.postedAt ?? 0)
+
+/**
+ * Canvas defaults /announcements to the last 14 days only, which silently hides
+ * older posts. Look back a year by default; the route can override.
+ *
+ * Day granularity keeps the cache key stable across polls within a day.
+ */
+function announcementWindow(startDate, endDate) {
   const day = (ms) => new Date(ms).toISOString().slice(0, 10)
-  const end = endDate ?? day(Date.now() + 24 * 60 * 60 * 1000)
-  const start = startDate ?? day(Date.now() - 365 * 24 * 60 * 60 * 1000)
+  return {
+    start: startDate ?? day(Date.now() - 365 * 24 * 60 * 60 * 1000),
+    end: endDate ?? day(Date.now() + 24 * 60 * 60 * 1000),
+  }
+}
 
-  const { data } = await cachedGet('/announcements', {
-    // axios appends "[]" to keys with array values -> context_codes[]=course_456&...
-    params: { context_codes: contextCodes, start_date: start, end_date: end, per_page: 50 },
-  })
+function shapeAnnouncement(a, source) {
+  const courseId = courseIdFromContext(a.context_code)
 
-  const announcements = Array.isArray(data) ? data : []
-
-  return announcements.map((a) => ({
+  return {
     id: a.id,
     title: a.title,
     message: a.message,
     postedAt: a.posted_at ?? a.created_at ?? null,
     author: a.user_name ?? a.author?.display_name ?? null,
-    courseId: a.context_code ? Number(a.context_code.replace('course_', '')) : null,
-  }))
+    courseId,
+    courseName: courseNameFor(courseId) ?? (source === PROGRAMME_SOURCE ? PROGRAMME_LABEL : null),
+    source,
+  }
+}
+
+/** One cached /announcements read. Both feeds share the 20s cache via cachedGet. */
+async function fetchAnnouncements(contextCodes, start, end, source) {
+  const { data } = await cachedGet('/announcements', {
+    // axios appends "[]" to keys with array values -> context_codes[]=course_456&...
+    params: { context_codes: contextCodes, start_date: start, end_date: end, per_page: 50 },
+  })
+
+  return (Array.isArray(data) ? data : []).map((a) => shapeAnnouncement(a, source))
+}
+
+/**
+ * The programme-wide feed, from the Welcome course.
+ *
+ * An unset WELCOME_COURSE_ID is the normal state until that course is created,
+ * so it resolves to an empty list. A *set but unreadable* id — a typo, or a
+ * course that is unpublished or deleted — is treated the same way on purpose:
+ * the four courses' announcements must still reach the page either way.
+ */
+async function getProgrammeAnnouncements(start, end) {
+  const courseId = welcomeCourseId()
+  if (!courseId) return []
+
+  try {
+    return await fetchAnnouncements([`course_${courseId}`], start, end, PROGRAMME_SOURCE)
+  } catch (err) {
+    const message = err.response?.data?.errors?.[0]?.message ?? err.message
+    console.warn(`[announcements] WELCOME_COURSE_ID=${courseId} unreadable: ${message}`)
+    return []
+  }
+}
+
+/**
+ * Every announcement a teacher should see, newest first — the programme feed
+ * plus all four REP courses.
+ *
+ * Stays a flat array because the socket poller diffs it by id and the dashboard
+ * preview renders it directly; getGroupedAnnouncements() is the categorised
+ * view built on top.
+ */
+export async function getAnnouncements({ startDate, endDate } = {}) {
+  const { start, end } = announcementWindow(startDate, endDate)
+  const contextCodes = Object.values(CANVAS_CONFIG.courses).map((c) => `course_${c.id}`)
+  const welcomeId = welcomeCourseId()
+
+  // A failure of the course feed still throws — that's a real outage the route
+  // should report. Only the Welcome course is allowed to fail quietly.
+  const [programme, courses] = await Promise.all([
+    getProgrammeAnnouncements(start, end),
+    fetchAnnouncements(contextCodes, start, end, COURSE_SOURCE),
+  ])
+
+  // If WELCOME_COURSE_ID is ever pointed at one of the four REP courses, its
+  // posts arrive down both paths. The programme feed wins, so nothing doubles.
+  const courseOnly = welcomeId
+    ? courses.filter((a) => String(a.courseId) !== String(welcomeId))
+    : courses
+
+  return [...programme, ...courseOnly].sort(newestFirst)
+}
+
+/**
+ * The same announcements split into the programme feed and per-course groups.
+ *
+ * Courses with nothing posted are omitted rather than rendered as empty
+ * sections, and groups keep the configured course order so the page doesn't
+ * reshuffle between refreshes.
+ *
+ * `programmeConfigured` lets the page tell "the Welcome course doesn't exist
+ * yet" apart from "it exists and has nothing in it".
+ */
+export function groupAnnouncements(announcements, programmeConfigured = false) {
+  const programme = []
+  const byCourse = new Map()
+
+  for (const a of announcements) {
+    if (a.source === PROGRAMME_SOURCE) {
+      programme.push(a)
+      continue
+    }
+
+    const key = String(a.courseId ?? 'unknown')
+    if (!byCourse.has(key)) {
+      byCourse.set(key, {
+        courseId: a.courseId ?? null,
+        courseName: a.courseName ?? null,
+        announcements: [],
+      })
+    }
+    byCourse.get(key).announcements.push(a)
+  }
+
+  const order = Object.values(CANVAS_CONFIG.courses).map((c) => String(c.id))
+  const rank = (group) => {
+    const index = order.indexOf(String(group.courseId))
+    return index === -1 ? order.length : index
+  }
+
+  const courses = [...byCourse.values()].sort((x, y) => rank(x) - rank(y))
+
+  return {
+    programme,
+    programmeConfigured,
+    courses,
+    total: programme.length + courses.reduce((n, g) => n + g.announcements.length, 0),
+  }
+}
+
+/** GET /api/announcements — the categorised payload the page renders. */
+export async function getGroupedAnnouncements(options = {}) {
+  const announcements = await getAnnouncements(options)
+  return groupAnnouncements(announcements, Boolean(welcomeCourseId()))
 }
