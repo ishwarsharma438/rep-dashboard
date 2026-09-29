@@ -5,7 +5,8 @@ import {
   getGroupedAnnouncements,
   getCourses,
   getDiscussions,
-  getFiles,
+  getGroupedDiscussions,
+  getGroupedFiles,
   getGroups,
   getUserProfile,
 } from '../services/canvasData.js'
@@ -55,22 +56,24 @@ router.get(
 )
 
 /**
- * GET /api/files/:userId
+ * GET /api/files/:userId — grouped: programme resources plus one section per
+ * course. See getGroupedFiles() for the shape.
  */
 router.get(
   '/files/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getFiles(req.canvasUserId))
+    res.json(await getGroupedFiles(req.canvasUserId))
   })
 )
 
 /**
- * GET /api/discussions/:userId
+ * GET /api/discussions/:userId — grouped: programme discussions plus one section
+ * per course. See getGroupedDiscussions() for the shape.
  */
 router.get(
   '/discussions/:userId',
   asyncHandler(async (req, res) => {
-    res.json(await getDiscussions(req.canvasUserId))
+    res.json(await getGroupedDiscussions(req.canvasUserId))
   })
 )
 

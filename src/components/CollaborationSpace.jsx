@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useDashboardData } from '../context/DashboardDataContext.jsx'
 import { formatRelativeTime } from '../lib/format.js'
-import { PeopleIcon } from './icons.jsx'
+import { discussionCourseLabel } from '../lib/discussions.js'
+import { ChevronDownIcon, PeopleIcon } from './icons.jsx'
 
 /** The first course the teacher can actually post into. */
 function firstEnrolledCourse(courses) {
@@ -199,7 +200,14 @@ function ReplyForm({ discussion, onDone, onOptimisticReply }) {
   )
 }
 
-function DiscussionCard({ discussion, isNew, replyOpen, onToggleReply, onOptimisticReply }) {
+function DiscussionCard({
+  discussion,
+  isNew,
+  replyOpen,
+  onToggleReply,
+  onOptimisticReply,
+  canReply = true,
+}) {
   const meta = [discussion.courseName, discussion.author, formatRelativeTime(discussion.postedAt)]
     .filter(Boolean)
     .join(' · ')
@@ -216,13 +224,21 @@ function DiscussionCard({ discussion, isNew, replyOpen, onToggleReply, onOptimis
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={onToggleReply}
-            className="rounded-lg px-3 py-1.5 font-body text-xs font-semibold text-rep-navy transition-colors hover:bg-black/5"
-          >
-            {replyOpen ? 'Close' : 'Reply'}
-          </button>
+          {/*
+            Replying posts through /api/discussions/:courseId/:topicId/entries,
+            which gates on enrolment in one of the four configured courses. The
+            Welcome course isn't one of them, so a reply there can never succeed
+            — offer Canvas instead of a button that always errors.
+          */}
+          {canReply && (
+            <button
+              type="button"
+              onClick={onToggleReply}
+              className="rounded-lg px-3 py-1.5 font-body text-xs font-semibold text-rep-navy transition-colors hover:bg-black/5"
+            >
+              {replyOpen ? 'Close' : 'Reply'}
+            </button>
+          )}
           <a
             href={discussion.url}
             target="_blank"
@@ -245,14 +261,61 @@ function DiscussionCard({ discussion, isNew, replyOpen, onToggleReply, onOptimis
   )
 }
 
+/**
+ * One course's discussions, collapsible — same pattern as the announcements and
+ * resources sections.
+ */
+function CourseSection({ group, children }) {
+  const [open, setOpen] = useState(true)
+  const count = group.discussions.length
+
+  return (
+    <div className="overflow-hidden rounded-xl bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+      >
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${
+            open ? '' : '-rotate-90'
+          }`}
+        />
+
+        <h3 className="min-w-0 flex-1 font-heading text-sm font-bold leading-snug text-rep-navy">
+          {discussionCourseLabel(group)}
+        </h3>
+
+        <span className="shrink-0 font-body text-xs text-gray-500">{count}</span>
+      </button>
+
+      {open && <div className="space-y-3 border-t border-gray-100 p-4">{children}</div>}
+    </div>
+  )
+}
+
 export default function CollaborationSpace() {
-  const { discussions, loading, failed, courses, newDiscussionIds, bumpReplyCount } =
+  const { discussionGroups, loading, failed, courses, newDiscussionIds, bumpReplyCount } =
     useDashboardData()
 
   const [composing, setComposing] = useState(false)
   const [openReplyId, setOpenReplyId] = useState(null) // one reply form at a time
 
   const enrolledCourse = firstEnrolledCourse(courses)
+  const { programme, courses: groups, programmeConfigured, total } = discussionGroups
+
+  const card = (d, canReply) => (
+    <DiscussionCard
+      key={`${d.courseId}-${d.id}`}
+      discussion={d}
+      isNew={newDiscussionIds?.has(d.id)}
+      replyOpen={openReplyId === d.id}
+      onToggleReply={() => setOpenReplyId((current) => (current === d.id ? null : d.id))}
+      onOptimisticReply={bumpReplyCount}
+      canReply={canReply}
+    />
+  )
 
   return (
     <section>
@@ -297,27 +360,59 @@ export default function CollaborationSpace() {
         </p>
       )}
 
-      {!loading.discussions && !failed?.discussions && discussions.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-xl bg-white p-8 text-center shadow-sm">
-          <PeopleIcon className="h-9 w-9 text-gray-300" />
-          <p className="font-body text-sm text-gray-500">
-            No discussions yet — be the first to start one
-          </p>
-        </div>
-      )}
+      {!loading.discussions && !failed?.discussions && (
+        <div className="space-y-5">
+          {/*
+            Programme discussions come from the "Welcome to REP" course and go to
+            everyone, so they sit above the per-course sections. Hidden entirely
+            until that course is configured, rather than showing an empty box for
+            however long it takes to create it.
+          */}
+          {(programmeConfigured || programme.length > 0) && (
+            <section>
+              <h3 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Programme Discussions
+              </h3>
 
-      {!loading.discussions && !failed?.discussions && discussions.length > 0 && (
-        <div className="space-y-3">
-          {discussions.map((d) => (
-            <DiscussionCard
-              key={`${d.courseId}-${d.id}`}
-              discussion={d}
-              isNew={newDiscussionIds?.has(d.id)}
-              replyOpen={openReplyId === d.id}
-              onToggleReply={() => setOpenReplyId((current) => (current === d.id ? null : d.id))}
-              onOptimisticReply={bumpReplyCount}
-            />
-          ))}
+              {programme.length > 0 ? (
+                <div className="space-y-3 border-l-4 border-rep-orange pl-3">
+                  {programme.map((d) => card(d, false))}
+                </div>
+              ) : (
+                <p className="rounded-xl border-l-4 border-rep-orange bg-white p-4 font-body text-sm text-gray-500 shadow-sm">
+                  No programme-wide discussions yet
+                </p>
+              )}
+            </section>
+          )}
+
+          <section>
+            {/* Only worth a heading once there's a programme section above it. */}
+            {(programmeConfigured || programme.length > 0) && (
+              <h3 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Course Discussions
+              </h3>
+            )}
+
+            {groups.length > 0 ? (
+              <div className="space-y-3">
+                {groups.map((group) => (
+                  <CourseSection key={group.courseId ?? discussionCourseLabel(group)} group={group}>
+                    {group.discussions.map((d) => card(d, true))}
+                  </CourseSection>
+                ))}
+              </div>
+            ) : (
+              total === 0 && (
+                <div className="flex flex-col items-center gap-2 rounded-xl bg-white p-8 text-center shadow-sm">
+                  <PeopleIcon className="h-9 w-9 text-gray-300" />
+                  <p className="font-body text-sm text-gray-500">
+                    No discussions yet — be the first to start one
+                  </p>
+                </div>
+              )
+            )}
+          </section>
         </div>
       )}
     </section>

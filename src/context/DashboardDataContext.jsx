@@ -7,6 +7,18 @@ import {
   flattenGroups,
   normalizeGroups,
 } from '../lib/announcements.js'
+import {
+  EMPTY_FILE_GROUPS,
+  flattenFileGroups,
+  normalizeFileGroups,
+  regroupFiles,
+} from '../lib/resources.js'
+import {
+  EMPTY_DISCUSSION_GROUPS,
+  flattenDiscussionGroups,
+  normalizeDiscussionGroups,
+  regroupDiscussions,
+} from '../lib/discussions.js'
 
 /**
  * The single source of dashboard data (courses, announcements, files,
@@ -23,6 +35,8 @@ const DashboardDataContext = createContext({
   announcements: [],
   announcementGroups: EMPTY_GROUPS,
   files: [],
+  fileGroups: EMPTY_FILE_GROUPS,
+  discussionGroups: EMPTY_DISCUSSION_GROUPS,
   discussions: [],
   loading: EMPTY_FLAGS,
   failed: {},
@@ -47,8 +61,12 @@ export function DashboardDataProvider({ children }) {
   // programme feed plus per-course sections the /announcements page renders.
   const [announcements, setAnnouncements] = useState([])
   const [announcementGroups, setAnnouncementGroups] = useState(EMPTY_GROUPS)
+  // Resources and discussions follow the same two-views-of-one-fetch shape: the
+  // flat list feeds the dashboard widgets, the groups feed the sectioned views.
   const [files, setFiles] = useState([])
+  const [fileGroups, setFileGroups] = useState(EMPTY_FILE_GROUPS)
   const [discussions, setDiscussions] = useState([])
+  const [discussionGroups, setDiscussionGroups] = useState(EMPTY_DISCUSSION_GROUPS)
   const [loading, setLoading] = useState(EMPTY_FLAGS)
   const [failed, setFailed] = useState({})
   const [newAnnouncementIds, setNewAnnouncementIds] = useState(() => new Set())
@@ -68,12 +86,18 @@ export function DashboardDataProvider({ children }) {
       if (cancelled) return
 
       const groups = normalizeGroups(a.status === 'fulfilled' ? a.value : null)
+      const fileSections = normalizeFileGroups(f.status === 'fulfilled' ? f.value : null)
+      const discussionSections = normalizeDiscussionGroups(
+        d.status === 'fulfilled' ? d.value : null
+      )
 
       setCourses(asArray(c))
       setAnnouncementGroups(groups)
       setAnnouncements(flattenGroups(groups))
-      setFiles(asArray(f))
-      setDiscussions(asArray(d))
+      setFileGroups(fileSections)
+      setFiles(flattenFileGroups(fileSections))
+      setDiscussionGroups(discussionSections)
+      setDiscussions(flattenDiscussionGroups(discussionSections))
       setLoading({ courses: false, announcements: false, files: false, discussions: false })
       setFailed({
         courses: c.status !== 'fulfilled',
@@ -123,6 +147,9 @@ export function DashboardDataProvider({ children }) {
     if (!Array.isArray(next)) return
     console.log('[socket] filesUpdate', next.length)
     setFiles(next)
+    // The poller broadcasts the whole list rather than just arrivals, so rebuild
+    // the sections — folding in would keep a file Canvas has since removed.
+    setFileGroups((groups) => regroupFiles(next, groups.programmeConfigured))
     settle('files')
   }, [])
 
@@ -137,6 +164,9 @@ export function DashboardDataProvider({ children }) {
       if (arrived.length) setNewDiscussionIds((ids) => new Set([...ids, ...arrived]))
       return next
     })
+
+    // Same as files: this event replaces the list, so the sections are rebuilt.
+    setDiscussionGroups((groups) => regroupDiscussions(next, groups.programmeConfigured))
     settle('discussions')
   }, [])
 
@@ -161,11 +191,18 @@ export function DashboardDataProvider({ children }) {
    * of -1 rolls the bump back if the request failed.
    */
   const bumpReplyCount = useCallback((topicId, delta = 1) => {
-    setDiscussions((current) =>
-      current.map((d) =>
-        d.id === topicId ? { ...d, replyCount: Math.max(0, (d.replyCount ?? 0) + delta) } : d
-      )
-    )
+    const bump = (d) =>
+      d.id === topicId ? { ...d, replyCount: Math.max(0, (d.replyCount ?? 0) + delta) } : d
+
+    setDiscussions((current) => current.map(bump))
+
+    // The Collaboration Space renders from the groups, so the optimistic bump
+    // has to land there too or the count wouldn't move until the broadcast.
+    setDiscussionGroups((groups) => ({
+      ...groups,
+      programme: groups.programme.map(bump),
+      courses: groups.courses.map((g) => ({ ...g, discussions: g.discussions.map(bump) })),
+    }))
   }, [])
 
   return (
@@ -175,7 +212,9 @@ export function DashboardDataProvider({ children }) {
         announcements,
         announcementGroups,
         files,
+        fileGroups,
         discussions,
+        discussionGroups,
         loading,
         failed,
         newAnnouncementIds,

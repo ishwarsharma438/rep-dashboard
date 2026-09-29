@@ -117,6 +117,54 @@ async function perEnrolledCourse(userId, fn) {
   return results.flat()
 }
 
+/* ---------- the programme (Welcome) course ---------- */
+
+/**
+ * The "Welcome to REP" course, whose announcements, files and discussions go to
+ * every teacher regardless of enrolment — or null while that course doesn't
+ * exist yet.
+ *
+ * Read per call rather than at module load so the feature activates by setting
+ * the variable and restarting, with no code change.
+ */
+const welcomeCourseId = () => process.env.WELCOME_COURSE_ID?.trim() || null
+
+export const PROGRAMME_SOURCE = 'programme'
+export const COURSE_SOURCE = 'course'
+
+// Shown where a programme item needs a course label. The Welcome course's real
+// Canvas name isn't known until it exists, and fetching it would cost a request
+// per poll for a string every page already has a heading for.
+const PROGRAMME_LABEL = 'Programme'
+
+/** The Welcome course shaped like the `course` argument the shapers expect. */
+function programmeCourse(courseId) {
+  return { courseId: Number(courseId) || courseId, courseName: PROGRAMME_LABEL }
+}
+
+/**
+ * Runs a Welcome-course read, or resolves empty.
+ *
+ * An unset WELCOME_COURSE_ID is the normal state until that course is created.
+ * A *set but unreadable* id — a typo, or a course that is unpublished or
+ * deleted — is treated the same way on purpose: the four courses' content must
+ * still reach the page either way.
+ */
+async function fromWelcomeCourse(label, read) {
+  const courseId = welcomeCourseId()
+  if (!courseId) return []
+
+  try {
+    return await read(courseId)
+  } catch (err) {
+    const message = err.response?.data?.errors?.[0]?.message ?? err.message
+    console.warn(`[${label}] WELCOME_COURSE_ID=${courseId} unreadable: ${message}`)
+    return []
+  }
+}
+
+/* ---------- files ---------- */
+
 /** The curated Resource Hub folder, or null to fall back to all course files. */
 const resourceFolderId = () => process.env.CANVAS_RESOURCE_FOLDER_ID?.trim() || null
 
@@ -126,7 +174,7 @@ const resourceFolderId = () => process.env.CANVAS_RESOURCE_FOLDER_ID?.trim() || 
  * `size` stays a formatted string because FileCard prints it directly; the raw
  * byte count is kept alongside as sizeBytes for anything that needs to sort.
  */
-function shapeFile(f, course) {
+function shapeFile(f, course, source = COURSE_SOURCE) {
   return {
     id: f.id,
     filename: f.display_name ?? f.filename,
@@ -140,6 +188,7 @@ function shapeFile(f, course) {
     thumbnailUrl: f.thumbnail_url ?? null,
     courseId: course?.courseId ?? null,
     courseName: course?.courseName ?? null,
+    source,
   }
 }
 
@@ -191,39 +240,124 @@ async function getAllCourseFiles(userId) {
 }
 
 /**
- * GET /api/files/:userId — the Resource Hub file list.
+ * Programme-wide resources: everything in the Welcome course's files.
  *
- * With CANVAS_RESOURCE_FOLDER_ID set, this is only what the client has placed
- * in that folder. Without it, every file across the user's enrolled courses,
- * exactly as before.
- *
- * Shared with the socket poller, so both paths must come through here — a route
- * that filtered while the poll did not would flip the list every 30 seconds.
+ * Scoped by course rather than by folder. CANVAS_RESOURCE_FOLDER_ID names one
+ * specific folder, and the Welcome course's folder ids can't be known until the
+ * course exists — so reading the course's own file list keeps this to the single
+ * WELCOME_COURSE_ID variable rather than needing a second one later.
  */
-export async function getFiles(userId) {
-  const folderId = resourceFolderId()
-  return folderId ? getFolderFiles(folderId) : getAllCourseFiles(userId)
+async function getProgrammeFiles() {
+  return fromWelcomeCourse('resources', async (courseId) => {
+    const { data } = await cachedGet(`/courses/${encodeURIComponent(courseId)}/files`, {
+      params: { per_page: 100 },
+    })
+
+    const course = programmeCourse(courseId)
+    return (Array.isArray(data) ? data : []).map((f) => shapeFile(f, course, PROGRAMME_SOURCE))
+  })
 }
 
 /**
- * GET /api/discussions/:userId — discussion topics across accessible courses.
+ * Every file a teacher should see — the programme resources plus their courses'.
+ *
+ * With CANVAS_RESOURCE_FOLDER_ID set, the course half is only what the client
+ * has placed in that folder. Without it, every file across the user's enrolled
+ * courses, exactly as before.
+ *
+ * Stays a flat array: the socket poller diffs it and the dashboard Resource Hub
+ * renders it directly. Shared with the poller, so both paths must come through
+ * here — a route that filtered while the poll did not would flip the list every
+ * 30 seconds.
+ */
+export async function getFiles(userId) {
+  const folderId = resourceFolderId()
+  const welcomeId = welcomeCourseId()
+
+  const [programme, courseFiles] = await Promise.all([
+    getProgrammeFiles(),
+    folderId ? getFolderFiles(folderId) : getAllCourseFiles(userId),
+  ])
+
+  // If WELCOME_COURSE_ID is ever pointed at a course whose files already arrive
+  // down the course path, the programme feed wins so nothing doubles.
+  const courseOnly = welcomeId
+    ? courseFiles.filter((f) => String(f.courseId) !== String(welcomeId))
+    : courseFiles
+
+  return [...programme, ...courseOnly]
+}
+
+/** GET /api/files/:userId — the categorised Resource Hub payload. */
+export async function getGroupedFiles(userId) {
+  return groupByContext(await getFiles(userId), {
+    programmeConfigured: Boolean(welcomeCourseId()),
+    key: 'files',
+  })
+}
+
+/* ---------- discussions ---------- */
+
+function shapeDiscussion(d, course, source = COURSE_SOURCE) {
+  return {
+    id: d.id,
+    title: d.title,
+    author: d.author?.display_name ?? d.user_name ?? null,
+    postedAt: d.posted_at ?? d.created_at ?? null,
+    replyCount: d.discussion_subentry_count ?? 0,
+    url: `${CANVAS_CONFIG.baseUrl}/courses/${course.courseId}/discussion_topics/${d.id}`,
+    courseId: course.courseId,
+    courseName: course.courseName,
+    source,
+  }
+}
+
+/** Programme-wide discussions: the Welcome course's topics. */
+async function getProgrammeDiscussions() {
+  return fromWelcomeCourse('discussions', async (courseId) => {
+    const { data } = await cachedGet(
+      `/courses/${encodeURIComponent(courseId)}/discussion_topics`,
+      { params: { per_page: 50 } }
+    )
+
+    const course = programmeCourse(courseId)
+    return (Array.isArray(data) ? data : []).map((d) =>
+      shapeDiscussion(d, course, PROGRAMME_SOURCE)
+    )
+  })
+}
+
+/**
+ * Every discussion a teacher should see — the programme topics plus their
+ * courses'. Flat, because the socket broadcast and the post-write refresh both
+ * carry this list as-is.
  */
 export async function getDiscussions(userId) {
-  return perEnrolledCourse(userId, async (course) => {
-    const { data } = await cachedGet(`/courses/${course.courseId}/discussion_topics`, {
-      params: { per_page: 50 },
-    })
+  const welcomeId = welcomeCourseId()
 
-    return (Array.isArray(data) ? data : []).map((d) => ({
-      id: d.id,
-      title: d.title,
-      author: d.author?.display_name ?? d.user_name ?? null,
-      postedAt: d.posted_at ?? d.created_at ?? null,
-      replyCount: d.discussion_subentry_count ?? 0,
-      url: `${CANVAS_CONFIG.baseUrl}/courses/${course.courseId}/discussion_topics/${d.id}`,
-      courseId: course.courseId,
-      courseName: course.courseName,
-    }))
+  const [programme, courseTopics] = await Promise.all([
+    getProgrammeDiscussions(),
+    perEnrolledCourse(userId, async (course) => {
+      const { data } = await cachedGet(`/courses/${course.courseId}/discussion_topics`, {
+        params: { per_page: 50 },
+      })
+
+      return (Array.isArray(data) ? data : []).map((d) => shapeDiscussion(d, course))
+    }),
+  ])
+
+  const courseOnly = welcomeId
+    ? courseTopics.filter((d) => String(d.courseId) !== String(welcomeId))
+    : courseTopics
+
+  return [...programme, ...courseOnly]
+}
+
+/** GET /api/discussions/:userId — the categorised Collaboration Space payload. */
+export async function getGroupedDiscussions(userId) {
+  return groupByContext(await getDiscussions(userId), {
+    programmeConfigured: Boolean(welcomeCourseId()),
+    key: 'discussions',
   })
 }
 
@@ -319,23 +453,6 @@ export async function getGroups(userId) {
 }
 
 /* ---------- announcements ---------- */
-
-/**
- * The "Welcome to REP" course, whose announcements go to every teacher
- * regardless of enrolment — or null while that course doesn't exist yet.
- *
- * Read per call rather than at module load so the feature activates by setting
- * the variable and restarting, with no code change.
- */
-const welcomeCourseId = () => process.env.WELCOME_COURSE_ID?.trim() || null
-
-export const PROGRAMME_SOURCE = 'programme'
-export const COURSE_SOURCE = 'course'
-
-// Shown where a programme announcement needs a label. The Welcome course's real
-// Canvas name isn't known until it exists, and fetching it would cost a request
-// per poll for a string the page already has a heading for.
-const PROGRAMME_LABEL = 'Programme'
 
 /** Configured name for a Canvas course id, or null if it isn't one of ours. */
 function courseNameFor(courseId) {
@@ -444,34 +561,35 @@ export async function getAnnouncements({ startDate, endDate } = {}) {
 }
 
 /**
- * The same announcements split into the programme feed and per-course groups.
+ * Splits a shaped list into the programme feed and per-course groups.
  *
- * Courses with nothing posted are omitted rather than rendered as empty
- * sections, and groups keep the configured course order so the page doesn't
- * reshuffle between refreshes.
+ * Shared by announcements, files and discussions — `key` is what the per-course
+ * array is called in each payload. Courses with nothing in them are omitted
+ * rather than sent as empty sections, and groups keep the configured course
+ * order so pages don't reshuffle between refreshes.
  *
- * `programmeConfigured` lets the page tell "the Welcome course doesn't exist
- * yet" apart from "it exists and has nothing in it".
+ * `programmeConfigured` lets a page tell "the Welcome course doesn't exist yet"
+ * apart from "it exists and has nothing in it".
  */
-export function groupAnnouncements(announcements, programmeConfigured = false) {
+export function groupByContext(items, { programmeConfigured = false, key = 'items' } = {}) {
   const programme = []
   const byCourse = new Map()
 
-  for (const a of announcements) {
-    if (a.source === PROGRAMME_SOURCE) {
-      programme.push(a)
+  for (const item of items) {
+    if (item.source === PROGRAMME_SOURCE) {
+      programme.push(item)
       continue
     }
 
-    const key = String(a.courseId ?? 'unknown')
-    if (!byCourse.has(key)) {
-      byCourse.set(key, {
-        courseId: a.courseId ?? null,
-        courseName: a.courseName ?? null,
-        announcements: [],
+    const mapKey = String(item.courseId ?? 'unknown')
+    if (!byCourse.has(mapKey)) {
+      byCourse.set(mapKey, {
+        courseId: item.courseId ?? null,
+        courseName: item.courseName ?? null,
+        [key]: [],
       })
     }
-    byCourse.get(key).announcements.push(a)
+    byCourse.get(mapKey)[key].push(item)
   }
 
   const order = Object.values(CANVAS_CONFIG.courses).map((c) => String(c.id))
@@ -486,8 +604,13 @@ export function groupAnnouncements(announcements, programmeConfigured = false) {
     programme,
     programmeConfigured,
     courses,
-    total: programme.length + courses.reduce((n, g) => n + g.announcements.length, 0),
+    total: programme.length + courses.reduce((n, g) => n + g[key].length, 0),
   }
+}
+
+/** The announcements view of groupByContext. */
+export function groupAnnouncements(announcements, programmeConfigured = false) {
+  return groupByContext(announcements, { programmeConfigured, key: 'announcements' })
 }
 
 /** GET /api/announcements — the categorised payload the page renders. */
