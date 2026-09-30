@@ -11,6 +11,7 @@ import {
   getUserProfile,
 } from '../services/canvasData.js'
 import canvasApi, { cachedGet, invalidateCache } from '../services/canvasApi.js'
+import { BOOKING_TOTALS, classifyBooking, isActiveEvent } from '../services/bookings.js'
 import { COACHING_GROUPS } from '../../src/data/roadmapEvents.js'
 import { emitToUser } from '../services/realtime.js'
 import { setLastKnown } from '../services/pollingService.js'
@@ -327,35 +328,10 @@ router.get(
  */
 
 /** Program allowance per teacher. Mirrors the session cards. */
-const BOOKING_TOTALS = {
-  coaching_1on1: 2,
-  mhfa: 1,
-  group_coaching: 3,
-  webinars: 4,
-  f2f: 2,
-}
-
-/**
- * Title -> session type, most specific pattern first.
- *
- * Order carries the logic: "Group Coaching" also contains "Coaching", and
- * "MHFA Workshop" also contains "Workshop", so a flat set of rules would put
- * those events in two buckets at once. Each event is counted exactly once.
- */
-const BOOKING_PATTERNS = [
-  ['group_coaching', /group\s*coaching/i],
-  ['mhfa', /\bmhfa\b|mental\s*health/i],
-  ['coaching_1on1', /\bcoach|1:1|1-1\b/i],
-  ['webinars', /webinar/i],
-  ['f2f', /\bf2f\b|face[-\s]?to[-\s]?face|workshop/i],
-]
-
-export function classifyBooking(title = '') {
-  for (const [type, pattern] of BOOKING_PATTERNS) {
-    if (pattern.test(title)) return type
-  }
-  return null
-}
+// The classifier and allowances live in services/bookings.js so the admin
+// aggregation can reuse them without importing a route module. Re-exported here
+// because this module's public surface and behaviour are unchanged.
+export { classifyBooking }
 
 /**
  * GET /api/bookings/summary — booked vs allowed, per session type.

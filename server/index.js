@@ -9,6 +9,7 @@ import cors from 'cors'
 import session from 'express-session'
 import { Server as SocketServer } from 'socket.io'
 import canvasRoutes from './routes/canvas.js'
+import adminRoutes from './routes/admin.js'
 import ltiRoutes from './routes/lti.js'
 import ltiSession from './middleware/ltiSession.js'
 import LTI_CONFIG, { ltiConfigErrors } from './config/ltiConfig.js'
@@ -80,6 +81,10 @@ app.use('/lti', ltiRoutes)
 
 // Resolves req.canvasUserId for every data route: the launch session when LTI
 // is on, the unchanged fallback id when it is off.
+//
+// Admin analytics mounts first on its own prefix so it never shadows an existing
+// /api path, and shares the same identity middleware.
+app.use('/api/admin', ltiSession, adminRoutes)
 app.use('/api', ltiSession, canvasRoutes)
 
 // Unknown /api path -> clean JSON instead of Express' HTML 404.

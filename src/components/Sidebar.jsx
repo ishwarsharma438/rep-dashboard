@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import repLogoFull from '../assets/rep-logo-full.png'
 import Avatar from './Avatar.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
+import useAdminAccess from '../hooks/useAdminAccess.js'
 import {
   BookIcon,
   CalendarCheckIcon,
@@ -11,6 +12,7 @@ import {
   DocumentIcon,
   HouseIcon,
   MegaphoneIcon,
+  PeopleIcon,
 } from './icons.jsx'
 
 // Only the Dashboard view exists this milestone; the other items route to the
@@ -23,6 +25,10 @@ const NAV_ITEMS = [
   { label: 'Announcements', to: '/announcements', Icon: MegaphoneIcon },
   { label: 'Resources', to: '/resources', Icon: DocumentIcon },
 ]
+
+// Appended to NAV_ITEMS only for programme staff. Kept separate so the regular
+// navigation is byte-identical for everyone else.
+const ADMIN_NAV_ITEM = { label: 'Analytics', to: '/admin', Icon: PeopleIcon }
 
 function NavItem({ item, onNavigate }) {
   const { label, to, Icon } = item
@@ -55,6 +61,11 @@ function NavItem({ item, onNavigate }) {
 
 export default function Sidebar({ open, onClose }) {
   const { user, loading } = useProfile()
+
+  // Staff also get the Analytics item. Hidden while the check is in flight so it
+  // never flashes in for a participant.
+  const { allowed: isStaff } = useAdminAccess()
+  const navItems = isStaff ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
 
   return (
     <>
@@ -91,7 +102,7 @@ export default function Sidebar({ open, onClose }) {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavItem key={item.to} item={item} onNavigate={onClose} />
           ))}
         </nav>

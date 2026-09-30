@@ -7,6 +7,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage.jsx'
 import ResourcesPage from './pages/ResourcesPage.jsx'
 import SessionsPage from './pages/SessionsPage.jsx'
 import CalendarPage from './pages/CalendarPage.jsx'
+import AdminPage from './pages/AdminPage.jsx'
 import { ProfileProvider } from './context/ProfileContext.jsx'
 import { DashboardDataProvider } from './context/DashboardDataContext.jsx'
 import { MenuIcon } from './components/icons.jsx'
@@ -45,6 +46,10 @@ function Shell() {
 
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
+
+            {/* Additive: staff-only cohort analytics. The page renders its own
+                "staff only" state, and the API 403s regardless of the route. */}
+            <Route path="/admin" element={<AdminPage />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
