@@ -74,12 +74,26 @@ export function modulesUrl(canvasUrl) {
 }
 
 function CourseRow({ course }) {
-  const { courseId, courseName, canvasUrl, completedModules, totalModules, progressPercent, status } =
-    course
+  const {
+    courseId,
+    courseName,
+    canvasUrl,
+    completedModules,
+    totalModules,
+    progressPercent,
+    progressTracked,
+    role,
+    status,
+  } = course
 
   const Icon = COURSE_ICONS[courseId] ?? SproutIcon
   const notEnrolled = status === 'not_enrolled'
   const errored = status === 'error'
+
+  // Canvas only tracks module completion for student enrollments, so a teacher,
+  // TA or designer has no percentage to show. Older payloads have no
+  // progressTracked field at all, so treat its absence as "tracked".
+  const tracked = progressTracked !== false
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-md sm:flex-row sm:items-center">
@@ -100,7 +114,7 @@ function CourseRow({ course }) {
           <p className="mt-1 font-body text-sm text-gray-500">
             Couldn't load this course — try refreshing
           </p>
-        ) : (
+        ) : tracked ? (
           <>
             <p className="mt-0.5 font-body text-xs text-gray-500">
               {completedModules} of {totalModules} modules completed
@@ -109,6 +123,26 @@ function CourseRow({ course }) {
               <ProgressBar percent={progressPercent} />
             </div>
           </>
+        ) : (
+          /* Enrolled, but not as a student — so the course size is all Canvas
+             can tell us. Saying "0 of 10 completed" here would be a claim about
+             this teacher's work that Canvas never made. */
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <p className="font-body text-xs text-gray-500">
+              {totalModules} {totalModules === 1 ? 'module' : 'modules'}
+            </p>
+            {role && (
+              <span className="rounded-full bg-rep-navy/10 px-2 py-0.5 font-body text-[10px] font-semibold uppercase tracking-wide text-rep-navy">
+                {role}
+              </span>
+            )}
+            <span
+              className="font-body text-[11px] text-gray-400"
+              title="Canvas only records module completion for student enrolments"
+            >
+              Progress not tracked for this role
+            </span>
+          </div>
         )}
       </div>
 

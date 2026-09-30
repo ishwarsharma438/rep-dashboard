@@ -26,6 +26,76 @@ export async function getUserProfile(userId) {
  * Shared by GET /api/courses/:userId and the socket poller, so the polled
  * payload is byte-identical to what the route serves.
  */
+/**
+ * Enrollment types that mean "this course belongs on your dashboard".
+ *
+ * StudentViewEnrollment is deliberately absent: that's Canvas's "Student View"
+ * test persona, not a real person's place in the course.
+ */
+const ENROLLED_TYPES = new Set([
+  'StudentEnrollment',
+  'TeacherEnrollment',
+  'TaEnrollment',
+  'DesignerEnrollment',
+])
+
+// 'invited' counts as enrolled — a teacher who hasn't clicked accept yet is
+// still on the course. 'completed' keeps a finished course visible.
+const ENROLLMENT_STATES = ['active', 'invited', 'completed']
+
+/**
+ * Enrollment types in the order the card should name them, most meaningful
+ * first, with the label to show.
+ *
+ * Order matters: Canvas lists a user's enrollments alphabetically, so Johanna —
+ * Teacher *and* Designer in three of the four courses — would be labelled
+ * "Designer" if we just took the first one. Student leads because it's the only
+ * role whose progress the dashboard can actually show.
+ */
+const ROLE_PRIORITY = [
+  ['StudentEnrollment', 'Student'],
+  ['TeacherEnrollment', 'Teacher'],
+  ['TaEnrollment', 'TA'],
+  ['DesignerEnrollment', 'Designer'],
+]
+
+function primaryRole(roles) {
+  const match = ROLE_PRIORITY.find(([type]) => roles.includes(type))
+  return match ? match[1] : null
+}
+
+/**
+ * This user's enrollments in one course.
+ *
+ * Reads /courses/:id/enrollments rather than /users/:id/enrollments — the latter
+ * returns 403 for the admin token even when asking about a student, while the
+ * course-scoped form works for any user in the account.
+ */
+async function courseEnrollments(courseId, userId) {
+  const { data } = await cachedGet(`/courses/${courseId}/enrollments`, {
+    params: { user_id: userId, state: ENROLLMENT_STATES, per_page: 100 },
+  })
+
+  return (Array.isArray(data) ? data : []).filter((e) => ENROLLED_TYPES.has(e.type))
+}
+
+/**
+ * Module progress across the four REP courses. One failing course does not
+ * take down the other three.
+ *
+ * Enrollment is decided by the enrollments API, not by whether Canvas will
+ * accept `student_id`. Those are different questions: `student_id` asks "does
+ * this person have module progression here", which only a StudentEnrollment
+ * does — so a teacher, TA or designer got a 403 and was mislabelled as not
+ * enrolled, hiding their own courses from them.
+ *
+ * Canvas only tracks module completion for student enrollments. For everyone
+ * else there is no percentage to report, so the course comes back with
+ * progressTracked: false rather than a fabricated 0%.
+ *
+ * Shared by GET /api/courses/:userId and the socket poller, so the polled
+ * payload is byte-identical to what the route serves.
+ */
 export async function getCourses(userId) {
   const courses = Object.values(CANVAS_CONFIG.courses)
 
@@ -38,31 +108,82 @@ export async function getCourses(userId) {
         canvasUrl: `${CANVAS_CONFIG.baseUrl}/courses/${course.id}`,
       }
 
+      const empty = {
+        ...base,
+        totalModules: 0,
+        completedModules: 0,
+        progressPercent: 0,
+        progressTracked: false,
+        roles: [],
+        role: null,
+      }
+
       try {
+        const enrollments = await courseEnrollments(course.id, userId)
+
+        if (enrollments.length === 0) {
+          return { ...empty, status: 'not_enrolled', notEnrolled: true }
+        }
+
+        const roles = [...new Set(enrollments.map((e) => e.type))]
+        const enrolled = { ...base, roles, role: primaryRole(roles) }
+
+        // Only a student enrollment carries module state. Asking for anyone
+        // else's would 403, which is what caused this bug in the first place.
+        if (roles.includes('StudentEnrollment')) {
+          const { data } = await cachedGet(`/courses/${course.id}/modules`, {
+            params: { student_id: userId, per_page: 100 },
+          })
+
+          const modules = Array.isArray(data) ? data : []
+          const totalModules = modules.length
+          const completedModules = modules.filter((m) => m.state === 'completed').length
+          const progressPercent =
+            totalModules === 0 ? 0 : Math.round((completedModules / totalModules) * 100)
+
+          let status = 'in_progress'
+          if (progressPercent === 0) status = 'not_started'
+          else if (progressPercent === 100) status = 'completed'
+
+          return {
+            ...enrolled,
+            totalModules,
+            completedModules,
+            progressPercent,
+            progressTracked: true,
+            status,
+          }
+        }
+
+        // Teacher / TA / Designer: count the modules so the card can say how big
+        // the course is, and deliberately ignore every module's `state`. An
+        // unscoped modules call is answered as the *token owner*, so reading
+        // state here would show one admin's progress to every teacher.
         const { data } = await cachedGet(`/courses/${course.id}/modules`, {
-          params: { student_id: userId, per_page: 100 },
+          params: { per_page: 100 },
         })
 
-        const modules = Array.isArray(data) ? data : []
-        const totalModules = modules.length
-        const completedModules = modules.filter((m) => m.state === 'completed').length
-        const progressPercent =
-          totalModules === 0 ? 0 : Math.round((completedModules / totalModules) * 100)
-
-        let status = 'in_progress'
-        if (progressPercent === 0) status = 'not_started'
-        else if (progressPercent === 100) status = 'completed'
-
-        return { ...base, totalModules, completedModules, progressPercent, status }
+        return {
+          ...enrolled,
+          totalModules: Array.isArray(data) ? data.length : 0,
+          completedModules: null,
+          progressPercent: null,
+          progressTracked: false,
+          status: 'enrolled',
+        }
       } catch (err) {
         const message = err.response?.data?.errors?.[0]?.message ?? err.message
-        const empty = { ...base, totalModules: 0, completedModules: 0, progressPercent: 0 }
 
-        // Canvas rejects student_id for a course the user isn't enrolled in with
-        // 403 "user not authorised". That's an expected state, not a failure —
-        // a bad course id 404s and an outage surfaces with no response at all.
-        if (err.response?.status === 403 && /not authoris|not authoriz/i.test(message)) {
-          return { ...empty, status: 'not_enrolled', notEnrolled: true }
+        // Enrolment is answered by the enrollments call above, so a failure here
+        // is a real one rather than the old "403 probably means not enrolled"
+        // guess. Canvas returns the same opaque 404 for an unknown user and an
+        // unknown course, so log which user we asked about — if all four courses
+        // error at once it is almost always a bad user id, not four dead courses.
+        if (err.response?.status === 404) {
+          console.warn(
+            `[courses] 404 for course ${course.id} / user ${userId} —` +
+              ' check the user id exists in Canvas'
+          )
         }
 
         return { ...empty, status: 'error', error: true, message }
