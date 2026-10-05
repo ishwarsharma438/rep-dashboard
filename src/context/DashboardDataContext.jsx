@@ -8,12 +8,6 @@ import {
   normalizeGroups,
 } from '../lib/announcements.js'
 import {
-  EMPTY_FILE_GROUPS,
-  flattenFileGroups,
-  normalizeFileGroups,
-  regroupFiles,
-} from '../lib/resources.js'
-import {
   EMPTY_DISCUSSION_GROUPS,
   flattenDiscussionGroups,
   normalizeDiscussionGroups,
@@ -21,21 +15,19 @@ import {
 } from '../lib/discussions.js'
 
 /**
- * The single source of dashboard data (courses, announcements, files,
- * discussions) plus their live socket updates.
+ * The single source of dashboard data (courses, announcements, discussions)
+ * plus their live socket updates.
  *
  * Every consumer — the Dashboard previews, the dedicated pages and
  * EngagementStats — reads from here, so the data is fetched once per session
  * and one socket handler keeps all routes in sync.
  */
-const EMPTY_FLAGS = { courses: true, announcements: true, files: true, discussions: true }
+const EMPTY_FLAGS = { courses: true, announcements: true, discussions: true }
 
 const DashboardDataContext = createContext({
   courses: [],
   announcements: [],
   announcementGroups: EMPTY_GROUPS,
-  files: [],
-  fileGroups: EMPTY_FILE_GROUPS,
   discussionGroups: EMPTY_DISCUSSION_GROUPS,
   discussions: [],
   loading: EMPTY_FLAGS,
@@ -61,10 +53,8 @@ export function DashboardDataProvider({ children }) {
   // programme feed plus per-course sections the /announcements page renders.
   const [announcements, setAnnouncements] = useState([])
   const [announcementGroups, setAnnouncementGroups] = useState(EMPTY_GROUPS)
-  // Resources and discussions follow the same two-views-of-one-fetch shape: the
-  // flat list feeds the dashboard widgets, the groups feed the sectioned views.
-  const [files, setFiles] = useState([])
-  const [fileGroups, setFileGroups] = useState(EMPTY_FILE_GROUPS)
+  // Discussions follow the same two-views-of-one-fetch shape: the flat list
+  // feeds the dashboard widget, the groups feed its sections.
   const [discussions, setDiscussions] = useState([])
   const [discussionGroups, setDiscussionGroups] = useState(EMPTY_DISCUSSION_GROUPS)
   const [loading, setLoading] = useState(EMPTY_FLAGS)
@@ -80,13 +70,11 @@ export function DashboardDataProvider({ children }) {
     Promise.allSettled([
       json(`/api/courses/${USER_ID}`),
       json('/api/announcements'),
-      json(`/api/files/${USER_ID}`),
       json(`/api/discussions/${USER_ID}`),
-    ]).then(([c, a, f, d]) => {
+    ]).then(([c, a, d]) => {
       if (cancelled) return
 
       const groups = normalizeGroups(a.status === 'fulfilled' ? a.value : null)
-      const fileSections = normalizeFileGroups(f.status === 'fulfilled' ? f.value : null)
       const discussionSections = normalizeDiscussionGroups(
         d.status === 'fulfilled' ? d.value : null
       )
@@ -94,15 +82,12 @@ export function DashboardDataProvider({ children }) {
       setCourses(asArray(c))
       setAnnouncementGroups(groups)
       setAnnouncements(flattenGroups(groups))
-      setFileGroups(fileSections)
-      setFiles(flattenFileGroups(fileSections))
       setDiscussionGroups(discussionSections)
       setDiscussions(flattenDiscussionGroups(discussionSections))
-      setLoading({ courses: false, announcements: false, files: false, discussions: false })
+      setLoading({ courses: false, announcements: false, discussions: false })
       setFailed({
         courses: c.status !== 'fulfilled',
         announcements: a.status !== 'fulfilled',
-        files: f.status !== 'fulfilled',
         discussions: d.status !== 'fulfilled',
       })
     })
@@ -143,16 +128,6 @@ export function DashboardDataProvider({ children }) {
     settle('announcements')
   }, [])
 
-  const onFiles = useCallback((next) => {
-    if (!Array.isArray(next)) return
-    console.log('[socket] filesUpdate', next.length)
-    setFiles(next)
-    // The poller broadcasts the whole list rather than just arrivals, so rebuild
-    // the sections — folding in would keep a file Canvas has since removed.
-    setFileGroups((groups) => regroupFiles(next, groups.programmeConfigured))
-    settle('files')
-  }, [])
-
   const onDiscussions = useCallback((next) => {
     if (!Array.isArray(next)) return
     console.log('[socket] discussionsUpdate', next.length)
@@ -165,7 +140,8 @@ export function DashboardDataProvider({ children }) {
       return next
     })
 
-    // Same as files: this event replaces the list, so the sections are rebuilt.
+    // This event replaces the list rather than appending, so the sections are
+    // rebuilt — folding in would keep a topic the server has since dropped.
     setDiscussionGroups((groups) => regroupDiscussions(next, groups.programmeConfigured))
     settle('discussions')
   }, [])
@@ -174,16 +150,14 @@ export function DashboardDataProvider({ children }) {
     if (!socket) return
     socket.on('coursesUpdate', onCourses)
     socket.on('newAnnouncement', onAnnouncement)
-    socket.on('filesUpdate', onFiles)
     socket.on('discussionsUpdate', onDiscussions)
 
     return () => {
       socket.off('coursesUpdate', onCourses)
       socket.off('newAnnouncement', onAnnouncement)
-      socket.off('filesUpdate', onFiles)
       socket.off('discussionsUpdate', onDiscussions)
     }
-  }, [socket, onCourses, onAnnouncement, onFiles, onDiscussions])
+  }, [socket, onCourses, onAnnouncement, onDiscussions])
 
   /**
    * Optimistic local adjustment so a reply's count moves immediately.
@@ -211,8 +185,6 @@ export function DashboardDataProvider({ children }) {
         courses,
         announcements,
         announcementGroups,
-        files,
-        fileGroups,
         discussions,
         discussionGroups,
         loading,

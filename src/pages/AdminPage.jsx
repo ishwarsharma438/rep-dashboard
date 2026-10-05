@@ -365,7 +365,7 @@ export default function AdminPage() {
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center gap-3 rounded-2xl bg-white p-12 text-center shadow-md">
           <PeopleIcon className="h-10 w-10 text-gray-300" />
-          <h1 className="font-heading text-lg font-bold text-rep-navy">Programme staff only</h1>
+          <h1 className="font-heading text-lg font-bold text-rep-navy">Program staff only</h1>
           <p className="max-w-md font-body text-sm text-gray-500">
             This view shows cohort-wide analytics and is limited to REP staff.
           </p>
@@ -384,7 +384,7 @@ export default function AdminPage() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="font-heading text-2xl font-bold text-rep-navy sm:text-3xl">
-          Programme Analytics
+          Program Analytics
         </h1>
         {data && (
           <p className="font-body text-xs text-gray-400">

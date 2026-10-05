@@ -256,7 +256,7 @@ export const COURSE_SOURCE = 'course'
 // Shown where a programme item needs a course label. The Welcome course's real
 // Canvas name isn't known until it exists, and fetching it would cost a request
 // per poll for a string every page already has a heading for.
-const PROGRAMME_LABEL = 'Programme'
+const PROGRAMME_LABEL = 'Program'
 
 /** The Welcome course shaped like the `course` argument the shapers expect. */
 function programmeCourse(courseId) {
@@ -292,8 +292,10 @@ const resourceFolderId = () => process.env.CANVAS_RESOURCE_FOLDER_ID?.trim() || 
 /**
  * One Canvas file -> the shape the Resource Hub renders.
  *
- * `size` stays a formatted string because FileCard prints it directly; the raw
- * byte count is kept alongside as sizeBytes for anything that needs to sort.
+ * `size` stays a pre-formatted string and sizeBytes keeps the raw count. The
+ * dashboard no longer renders files — the client moved resources into their own
+ * Canvas course — but the route and poller still serve this shape, so it is kept
+ * ready for whatever consumes it next.
  */
 function shapeFile(f, course, source = COURSE_SOURCE) {
   return {

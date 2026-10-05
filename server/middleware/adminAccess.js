@@ -112,7 +112,7 @@ export function requireAdmin(req, res, next) {
 
       res.status(403).json({
         error: true,
-        message: 'This view is limited to programme staff',
+        message: 'This view is limited to program staff',
       })
     })
     .catch(next)

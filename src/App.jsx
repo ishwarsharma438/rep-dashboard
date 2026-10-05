@@ -4,7 +4,6 @@ import Sidebar from './components/Sidebar.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import CoursesPage from './pages/CoursesPage.jsx'
 import AnnouncementsPage from './pages/AnnouncementsPage.jsx'
-import ResourcesPage from './pages/ResourcesPage.jsx'
 import SessionsPage from './pages/SessionsPage.jsx'
 import CalendarPage from './pages/CalendarPage.jsx'
 import AdminPage from './pages/AdminPage.jsx'
@@ -42,7 +41,6 @@ function Shell() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/courses" element={<CoursesPage />} />
             <Route path="/announcements" element={<AnnouncementsPage />} />
-            <Route path="/resources" element={<ResourcesPage />} />
 
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/sessions" element={<SessionsPage />} />

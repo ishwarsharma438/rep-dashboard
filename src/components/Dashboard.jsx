@@ -2,7 +2,6 @@ import CourseCards from './CourseCards.jsx'
 import JourneyTimeline from './JourneyTimeline.jsx'
 import SessionsSection from './SessionsSection.jsx'
 import CollaborationSpace from './CollaborationSpace.jsx'
-import ResourceHub from './ResourceHub.jsx'
 import EngagementStats from './EngagementStats.jsx'
 import ComingUp from './ComingUp.jsx'
 import AnnouncementsPanel from './AnnouncementsPanel.jsx'
@@ -45,7 +44,6 @@ export default function Dashboard() {
 
           <SessionsSection />
           <CollaborationSpace />
-          <ResourceHub />
         </div>
 
         {/* Right column (narrower) */}

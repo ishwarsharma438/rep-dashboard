@@ -125,7 +125,7 @@ export default function AnnouncementsPage() {
           {(programmeConfigured || programme.length > 0) && (
             <section>
               <h2 className="mb-2 font-heading text-lg font-semibold text-rep-navy">
-                Programme Announcements
+                Program Announcements
               </h2>
 
               <div className="rounded-2xl border-l-4 border-rep-orange bg-white p-5 shadow-md">
@@ -133,7 +133,7 @@ export default function AnnouncementsPage() {
                   <AnnouncementList announcements={programme} newIds={newAnnouncementIds} />
                 ) : (
                   <p className="font-body text-sm text-gray-500">
-                    No programme-wide announcements yet
+                    No program-wide announcements yet
                   </p>
                 )}
               </div>

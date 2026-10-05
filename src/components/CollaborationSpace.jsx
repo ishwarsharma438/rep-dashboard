@@ -371,7 +371,7 @@ export default function CollaborationSpace() {
           {(programmeConfigured || programme.length > 0) && (
             <section>
               <h3 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Programme Discussions
+                Program Discussions
               </h3>
 
               {programme.length > 0 ? (
@@ -380,7 +380,7 @@ export default function CollaborationSpace() {
                 </div>
               ) : (
                 <p className="rounded-xl border-l-4 border-rep-orange bg-white p-4 font-body text-sm text-gray-500 shadow-sm">
-                  No programme-wide discussions yet
+                  No program-wide discussions yet
                 </p>
               )}
             </section>

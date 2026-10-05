@@ -9,7 +9,6 @@ import {
   CalendarIcon,
   ChevronDownIcon,
   CloseIcon,
-  DocumentIcon,
   HouseIcon,
   MegaphoneIcon,
   PeopleIcon,
@@ -23,7 +22,6 @@ const NAV_ITEMS = [
   { label: 'Sessions', to: '/sessions', Icon: CalendarCheckIcon },
   { label: 'Calendar', to: '/calendar', Icon: CalendarIcon },
   { label: 'Announcements', to: '/announcements', Icon: MegaphoneIcon },
-  { label: 'Resources', to: '/resources', Icon: DocumentIcon },
 ]
 
 // Appended to NAV_ITEMS only for programme staff. Kept separate so the regular
