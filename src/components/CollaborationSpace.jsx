@@ -9,6 +9,72 @@ function firstEnrolledCourse(courses) {
   return courses.find((c) => c.status !== 'not_enrolled' && c.status !== 'error') ?? null
 }
 
+/**
+ * What the forum is for, as client-supplied copy.
+ *
+ * Held as data rather than markup so the wording can be edited without touching
+ * the layout. The emoji is decorative — the term beside it carries the meaning —
+ * so it is hidden from screen readers to avoid "light bulb Share ideas".
+ */
+const FORUM_USES = [
+  {
+    emoji: '💡',
+    term: 'Share ideas',
+    detail: "Strategies, activities, resources, and what's working.",
+  },
+  {
+    emoji: '❓',
+    term: 'Ask questions',
+    detail: 'Seek advice and learn from others.',
+  },
+  {
+    emoji: '💭',
+    term: 'Share your learning',
+    detail: "Reflect on what you've tried and discovered.",
+  },
+  {
+    emoji: '🗣️',
+    term: 'Share experiences',
+    detail: "What worked, what didn't, and what you'd do differently.",
+  },
+  {
+    emoji: '🤝',
+    term: 'Contribute',
+    detail: "Comment, offer suggestions, celebrate successes, and build on others' ideas.",
+  },
+]
+
+/** Intro block above the thread list: what this space is and how to use it. */
+function ForumIntro() {
+  return (
+    <div className="mb-3 rounded-xl bg-white p-4 shadow-sm">
+      <p className="font-body text-sm leading-relaxed text-gray-600">
+        A space to share ideas, ask questions, reflect on learning, and learn from each other
+        throughout the 12-month program.
+      </p>
+
+      <p className="mt-3 font-heading text-sm font-semibold text-rep-navy">Use this forum to:</p>
+
+      <ul className="mt-1.5 space-y-1.5">
+        {FORUM_USES.map((use) => (
+          <li key={use.term} className="flex gap-2 font-body text-sm leading-relaxed text-gray-600">
+            <span aria-hidden="true" className="shrink-0 leading-relaxed">
+              {use.emoji}
+            </span>
+            <span>
+              <span className="font-semibold text-rep-navy">{use.term}</span> — {use.detail}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-3 font-body text-sm font-semibold text-rep-orange">
+        Keep the conversation going and learn together!
+      </p>
+    </div>
+  )
+}
+
 function ReplyPill({ count }) {
   const none = !count
   return (
@@ -332,6 +398,8 @@ export default function CollaborationSpace() {
           </button>
         )}
       </div>
+
+      <ForumIntro />
 
       {!enrolledCourse && !loading.discussions && (
         <p className="mb-3 rounded-xl bg-white p-3 font-body text-xs text-gray-500 shadow-sm">
