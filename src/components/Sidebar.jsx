@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import repLogoFull from '../assets/rep-logo-full.png'
+import replenishLogo from '../assets/replenish-logo-transparent.png'
 import Avatar from './Avatar.jsx'
 import { useProfile } from '../context/ProfileContext.jsx'
 import useAdminAccess from '../hooks/useAdminAccess.js'
@@ -90,10 +90,14 @@ export default function Sidebar({ open, onClose }) {
           <CloseIcon className="h-5 w-5" />
         </button>
 
-        {/* Full horizontal lockup: wordmark and partner logos live in the image. */}
+        {/* Full horizontal lockup: wordmark, tagline and partner logos all live
+            in the image. This is the reversed artwork — light text, drawn for a
+            dark ground — so it needs no glow or plate to read on the navy.
+            The file is cropped tight to the ink, so the gutter here is the only
+            breathing room it gets. */}
         <div className="px-4 pb-5 pt-5">
           <img
-            src={repLogoFull}
+            src={replenishLogo}
             alt="replenish — Resilient Educators Partnership"
             className="h-auto w-full object-contain"
           />
