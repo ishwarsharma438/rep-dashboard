@@ -95,13 +95,13 @@ export default function Sidebar({ open, onClose }) {
             dark ground — so it needs no glow or plate to read on the navy.
             The file is cropped tight to the ink, so the gutter here is the only
             breathing room it gets. */}
-        <div className="px-4 pb-5 pt-5">
-          <img
-            src={replenishLogo}
-            alt="replenish — Resilient Educators Partnership"
-            className="h-auto w-full object-contain"
-          />
-        </div>
+        <div className="px-6 pb-5 pt-5">
+  <img
+    src={replenishLogo}
+    alt="replenish – Resilient Educators Partnership"
+    className="h-auto w-full max-w-[170px] mx-auto object-contain"
+  />
+</div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3">
           {navItems.map((item) => (
